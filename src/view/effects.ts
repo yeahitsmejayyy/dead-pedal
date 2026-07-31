@@ -19,6 +19,8 @@ import {
   CylinderGeometry,
   LineBasicMaterial,
   LineSegments,
+  InstancedMesh,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -29,8 +31,10 @@ import {
 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { clamp } from '../core/scalar'
+import { fromSeed, next, type RngState } from '../core/rng'
 import { pickupHex } from './palette'
 import { weaponFor } from '../content/weapons'
+import { tuningFor } from '../content/vehicles'
 import type { Pickup, Projectile, SimEvent, Vehicle } from '../sim'
 
 const MAX_TRACERS = 64
@@ -38,6 +42,26 @@ const MAX_BLASTS = 12
 const MAX_ROCKETS = 24
 const MAX_MINES = 24
 const MAX_CRATES = 16
+const MAX_SMOKE = 48
+const MAX_SPARKS = 128
+const MAX_DEBRIS = 64
+
+/**
+ * Fraction of `slipSaturation` at which a tyre starts to smoke.
+ *
+ * Measured on an open plate, roadster, `slipSaturation: 14`: a full-lock grip
+ * turn at full throttle peaks at 13.39 m/s (0.96x) and a handbrake turn at
+ * 33.80 (2.41x). Putting the threshold at saturation itself would therefore
+ * miss a maximum-effort corner by four percent — a knife-edge that fires or
+ * does not depending on the lap. At 0.7 a hard corner gives a wisp near its
+ * limit, the handbrake gives a plume with three times the margin, and ordinary
+ * driving stays clean.
+ *
+ * In the arena proper you cannot usually hold full lock long enough to reach
+ * the peak, so cornering smoke is occasional rather than constant. That is the
+ * intended reading: it marks the edge of grip, not the act of turning.
+ */
+const SMOKE_AT = 0.7
 
 /**
  * Rounds per visible tracer.
@@ -82,6 +106,28 @@ type Tracer = {
 }
 
 type Blast = { mesh: Mesh; age: number; radius: number }
+
+/** One puff, chip or shard. All three pools are the same shape of thing. */
+type Particle = {
+  x: number
+  y: number
+  z: number
+  vx: number
+  vy: number
+  vz: number
+  age: number
+  life: number
+  size: number
+  spin: number
+}
+
+function makeParticles(count: number): Particle[] {
+  const out: Particle[] = []
+  for (let i = 0; i < count; i++) {
+    out.push({ x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, age: Infinity, life: 1, size: 1, spin: 0 })
+  }
+  return out
+}
 
 /**
  * Body, nose cone and three fins merged into one geometry: one draw call per
@@ -130,6 +176,41 @@ export class Effects {
   private readonly crateKeys: string[] = []
   private readonly lockRing: Mesh
   private spin = 0
+
+  // ── smoke, sparks, debris ──────────────────────────────────────────────────
+  private readonly smoke = makeParticles(MAX_SMOKE)
+  private readonly sparks = makeParticles(MAX_SPARKS)
+  private readonly debris = makeParticles(MAX_DEBRIS)
+  private smokeCursor = 0
+  private sparkCursor = 0
+  private debrisCursor = 0
+  private readonly smokeMesh: InstancedMesh
+  private readonly sparkMesh: InstancedMesh
+  private readonly debrisMesh: InstancedMesh
+  private readonly placement = new Matrix4()
+
+  /**
+   * Randomness for the particles, seeded and owned here.
+   *
+   * `Math.random` would be the obvious choice — this is the view layer, nothing
+   * here can reach the sim, and Contract 4 explicitly frees effects to be
+   * non-deterministic. It is still the wrong choice, for a reason outside the
+   * sim entirely: the visual-regression harness pins the seed, the tick,
+   * `requestAnimationFrame` and `performance.now`, and a screenshot with
+   * `Math.random` in it is still different every run. Measured on a prototype
+   * of exactly these three effects: three failures in nine runs.
+   *
+   * So the same mulberry32 the sim uses, on its own stream. Determinism the
+   * sim does not need, bought for a test that does.
+   */
+  private rng: RngState = fromSeed(0x5eed)
+
+  /** A uniform draw in [lo, hi). Advances the stream. */
+  private random(lo: number, hi: number): number {
+    const draw = next(this.rng)
+    this.rng = draw.state
+    return lo + draw.value * (hi - lo)
+  }
 
   constructor(scene: Scene) {
     // ── tracers ──────────────────────────────────────────────────────────────
@@ -224,6 +305,36 @@ export class Effects {
       this.crates.push(mesh)
     }
 
+    // ── smoke, sparks, debris ────────────────────────────────────────────────
+    // One InstancedMesh each, so a hundred particles is one draw call. The
+    // budget is 100 and the frame sits at 57, so three effects at one call each
+    // is the only shape that fits — a mesh per particle would not.
+    const puff = new SphereGeometry(1, 6, 4)
+    this.smokeMesh = new InstancedMesh(
+      puff,
+      new MeshBasicMaterial({ color: 0xb9c2cc, transparent: true, opacity: 0.16, depthWrite: false }),
+      MAX_SMOKE,
+    )
+    const chip = new BoxGeometry(1, 1, 1)
+    this.sparkMesh = new InstancedMesh(
+      chip,
+      new MeshBasicMaterial({ color: 0xffd08a, blending: AdditiveBlending, depthWrite: false }),
+      MAX_SPARKS,
+    )
+    this.debrisMesh = new InstancedMesh(
+      chip,
+      new MeshStandardMaterial({ color: 0x4a4f58, roughness: 0.7, metalness: 0.3 }),
+      MAX_DEBRIS,
+    )
+    for (const mesh of [this.smokeMesh, this.sparkMesh, this.debrisMesh]) {
+      // Particles are scattered across the arena and the bounding sphere of an
+      // InstancedMesh is whatever its instances happen to span, so culling it
+      // is both wrong and pointless.
+      mesh.frustumCulled = false
+      mesh.count = 0
+      scene.add(mesh)
+    }
+
     // ── lock ring ────────────────────────────────────────────────────────────
     // One ring, moved to whoever is currently locked. The player only ever has
     // one lock, so a pool would be a pool of one.
@@ -310,7 +421,18 @@ export class Effects {
   }
 
   /** Drain one tick of sim events into visible effects. */
-  consume(events: readonly SimEvent[]): void {
+  /**
+   * Drain one tick of sim events into visible effects.
+   *
+   * `vehicles` is needed because of a subtlety in the damage events: for a
+   * hitscan round `event.pos` is the impact point on the car, but for blast
+   * damage it is `detonateAt` — the centre of the explosion, which can be a
+   * whole blast radius away. Sparks spawned at `event.pos` would therefore
+   * appear inside the fireball for every car caught in a rocket, where
+   * additive blending makes them invisible, and the "away from the panel"
+   * direction would point at the explosion instead of away from the car.
+   */
+  consume(events: readonly SimEvent[], vehicles: readonly Vehicle[] = []): void {
     for (const event of events) {
       if (event.type === 'tracer') {
         const seen = (this.roundCount.get(event.id) ?? 0) + 1
@@ -318,7 +440,114 @@ export class Effects {
         if (seen % TRACER_EVERY === 0) this.addTracer(event.from, event.to)
       } else if (event.type === 'explosion') {
         this.addBlast(event.pos, event.radius)
+      } else if (event.type === 'damaged') {
+        const car = vehicles.find((v) => v.id === event.id)
+        if (car !== undefined) this.addSparks(car, event.pos, event.amount)
+      } else if (event.type === 'vehicleDestroyed') {
+        this.addDebris(event.pos)
       }
+    }
+  }
+
+  /**
+   * Sparks off a panel.
+   *
+   * Spawned at the car and thrown along the surface normal — away from wherever
+   * the damage came from — rather than at the event's own position. See
+   * `consume` for why those are not the same point.
+   */
+  private addSparks(car: Vehicle, from: { x: number; y: number; z: number }, amount: number): void {
+    // Measured damage distribution over eight matches: median 2.8 (one round),
+    // p90 37, max 65.7. So two sparks for a bullet and a dozen for a rocket.
+    const count = Math.min(12, Math.round(1 + amount * 0.32))
+
+    let nx = car.pos.x - from.x
+    let nz = car.pos.z - from.z
+    const length = Math.hypot(nx, nz)
+    // A round that lands dead centre has no direction to bounce off; pick one
+    // rather than dividing by zero.
+    if (length < 0.01) {
+      nx = this.random(-1, 1)
+      nz = this.random(-1, 1)
+    } else {
+      nx /= length
+      nz /= length
+    }
+
+    for (let i = 0; i < count; i++) {
+      const p = this.sparks[this.sparkCursor]!
+      this.sparkCursor = (this.sparkCursor + 1) % MAX_SPARKS
+
+      p.x = car.pos.x + nx * 0.9
+      p.y = car.pos.y + this.random(0.1, 0.8)
+      p.z = car.pos.z + nz * 0.9
+      const spread = 5
+      p.vx = nx * this.random(2, 7) + this.random(-spread, spread)
+      p.vy = this.random(1.5, 6)
+      p.vz = nz * this.random(2, 7) + this.random(-spread, spread)
+      p.age = 0
+      p.life = this.random(0.22, 0.42)
+      p.size = this.random(0.05, 0.12)
+      p.spin = 0
+    }
+  }
+
+  /** Shards where a car was. Gone well before the three-second respawn. */
+  private addDebris(at: { x: number; y: number; z: number }): void {
+    for (let i = 0; i < 14; i++) {
+      const p = this.debris[this.debrisCursor]!
+      this.debrisCursor = (this.debrisCursor + 1) % MAX_DEBRIS
+
+      p.x = at.x + this.random(-0.6, 0.6)
+      p.y = at.y + this.random(0.2, 1.2)
+      p.z = at.z + this.random(-0.6, 0.6)
+      p.vx = this.random(-7, 7)
+      p.vy = this.random(3, 9)
+      p.vz = this.random(-7, 7)
+      p.age = 0
+      // Under respawnDelay (3s), so the wreckage is gone before the car is back.
+      p.life = this.random(1.9, 2.6)
+      p.size = this.random(0.14, 0.34)
+      p.spin = this.random(-9, 9)
+    }
+  }
+
+  /**
+   * Tyre smoke, for cars past the edge of grip.
+   *
+   * Driven off the sim's own `lateralSpeed` against `slipSaturation`, which is
+   * documented as the speed at which the tyres are fully saturated — so this is
+   * that sentence, scaled. Note the sim has no longitudinal wheelspin: a
+   * standing start produces exactly 0.00 lateral, so there is no launch smoke
+   * to be had and none is faked.
+   */
+  syncSmoke(vehicles: readonly Vehicle[], dt: number): void {
+    for (const vehicle of vehicles) {
+      if (!vehicle.grounded || vehicle.health <= 0) continue
+      const tuning = tuningFor(vehicle.archetype)
+      const ratio = Math.abs(vehicle.lateralSpeed) / tuning.slipSaturation
+      if (ratio < SMOKE_AT) continue
+
+      // Rate scales past the threshold, so a corner wisps and a handbrake turn
+      // at 2.4x pours. Poisson-ish rather than one per tick, which would tie
+      // the density to the frame rate.
+      const wanted = clamp((ratio - SMOKE_AT) * 1.6, 0, 1.4) * dt * 60
+      if (this.random(0, 1) > wanted) continue
+
+      const p = this.smoke[this.smokeCursor]!
+      this.smokeCursor = (this.smokeCursor + 1) % MAX_SMOKE
+      // At the contact patch, not the middle of the car: smoke that starts at
+      // the roofline reads as the car being on fire.
+      p.x = vehicle.pos.x + this.random(-0.8, 0.8)
+      p.y = vehicle.pos.y - 0.45
+      p.z = vehicle.pos.z + this.random(-1.2, 1.2)
+      p.vx = this.random(-0.4, 0.4)
+      p.vy = this.random(0.3, 0.8)
+      p.vz = this.random(-0.4, 0.4)
+      p.age = 0
+      p.life = this.random(0.35, 0.6)
+      p.size = this.random(0.12, 0.26)
+      p.spin = 0
     }
   }
 
@@ -388,7 +617,69 @@ export class Effects {
     for (let i = laid; i < this.mines.length; i++) this.mines[i]!.visible = false
   }
 
+  /**
+   * Integrate one particle pool and write its live instances.
+   *
+   * `count` is set to how many are alive, so a pool with nothing in it costs
+   * the GPU nothing even though the mesh stays in the scene. Dead slots are not
+   * compacted — the pool is a ring buffer and the cursor overwrites the oldest,
+   * which is what keeps this allocation-free.
+   */
+  private stepParticles(
+    pool: Particle[],
+    mesh: InstancedMesh,
+    dt: number,
+    gravity: number,
+    drag: number,
+    grow: number,
+  ): void {
+    let live = 0
+    for (const p of pool) {
+      if (p.age >= p.life) continue
+      p.age += dt
+      if (p.age >= p.life) continue
+
+      p.vy -= gravity * dt
+      const slow = Math.max(0, 1 - drag * dt)
+      p.vx *= slow
+      p.vz *= slow
+      p.x += p.vx * dt
+      p.y += p.vy * dt
+      p.z += p.vz * dt
+
+      // Floor. Debris bounces once and settles; smoke and sparks just stop.
+      if (p.y < 0.05) {
+        p.y = 0.05
+        p.vy = Math.abs(p.vy) > 1.5 ? -p.vy * 0.35 : 0
+      }
+
+      const t = p.age / p.life
+      const scale = p.size * (1 + grow * t)
+      this.placement.makeScale(scale, scale, scale)
+      this.placement.setPosition(p.x, p.y, p.z)
+      mesh.setMatrixAt(live, this.placement)
+      live++
+    }
+    mesh.count = live
+    if (live > 0) mesh.instanceMatrix.needsUpdate = true
+  }
+
+  /** Live particle counts, for the dev probe. Cheap and read-only. */
+  particleCounts(): { smoke: number; sparks: number; debris: number } {
+    return {
+      smoke: this.smokeMesh.count,
+      sparks: this.sparkMesh.count,
+      debris: this.debrisMesh.count,
+    }
+  }
+
   update(dt: number): void {
+    // Smoke swells and drifts, sparks fall fast and hard, debris tumbles under
+    // full gravity. Same integrator, three sets of numbers.
+    this.stepParticles(this.smoke, this.smokeMesh, dt, -0.7, 2.2, 1.9)
+    this.stepParticles(this.sparks, this.sparkMesh, dt, 26, 2.2, -0.7)
+    this.stepParticles(this.debris, this.debrisMesh, dt, 20, 0.7, 0)
+
     // ── tracers ──────────────────────────────────────────────────────────────
     // Each round is a short streak flying from the muzzle to where the sim
     // already said it landed. Drawing the whole line at once is what made the

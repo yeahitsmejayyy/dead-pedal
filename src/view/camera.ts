@@ -38,6 +38,20 @@ export type CameraTuning = {
   shakeScale: number
   /** How fast shake dies off, 1/s. */
   shakeDecay: number
+  /**
+   * How fast the FOV follows the speed it is derived from, 1/s.
+   *
+   * Not optional, and it fixes a measured defect. `fov` used to be written
+   * straight from `forwardSpeed`, which is a sim value that can move a very
+   * long way in one tick: a top-speed head-on stepped the FOV 12.1 degrees in
+   * a single frame, and dying stepped it 14.0, because main.ts passes speed 0
+   * for a wreck. A 12-degree zoom on the exact frame of the crash reads as the
+   * renderer glitching rather than as impact.
+   *
+   * It is also what makes hit-stop legible: a held camera whose field of view
+   * is snapping underneath it is not a held frame.
+   */
+  fovStiffness: number
 }
 
 export const DEFAULT_CAMERA: CameraTuning = {
@@ -52,6 +66,7 @@ export const DEFAULT_CAMERA: CameraTuning = {
   fovAtSpeed: 14,
   shakeScale: 0.05,
   shakeDecay: 6,
+  fovStiffness: 6,
 }
 
 export type CameraTarget = {
@@ -75,12 +90,18 @@ export class ChaseCamera {
   private readonly lookAt = new Vector3()
   private shake = 0
   private shakePhase = 0
+  /** Smoothed FOV, so a one-tick speed change cannot snap the lens. */
+  private fov: number
+  /** Seconds of camera freeze left. See `hitStop`. */
+  private frozen = 0
   private initialised = false
   private lookingBack = false
 
   constructor(aspect: number, tuning: CameraTuning = { ...DEFAULT_CAMERA }) {
     this.tuning = tuning
     this.camera = new PerspectiveCamera(tuning.baseFov, aspect, 0.1, 1200)
+    // Starts where the lens starts, so the first frame does not ease in from 0.
+    this.fov = tuning.baseFov
   }
 
   /** Register an impact. Magnitude is closing speed in m/s. */
@@ -88,8 +109,34 @@ export class ChaseCamera {
     this.shake = Math.min(1.2, this.shake + magnitude * this.tuning.shakeScale)
   }
 
+  /**
+   * Hold the camera still for a moment, without touching the sim.
+   *
+   * The sim has no timestep to slow: `step(world, inputs)` takes no `dt` at
+   * all, so the only way to freeze the world is to stop calling it — and
+   * `advance()` DROPS accumulated time past its cap rather than banking it, so
+   * a frozen accumulator loses those ticks permanently, deletes the steering
+   * integrated during them, and in a networked future puts the client behind
+   * the server by exactly the amount of the biggest hit. None of the replay
+   * fixtures would notice, because they never run the frame loop.
+   *
+   * So the freeze is the camera's alone. The world keeps ticking at 60Hz and
+   * the hash never moves; what stops is the smoothing that follows it, which is
+   * the part you actually see.
+   */
+  hitStop(seconds: number): void {
+    this.frozen = Math.max(this.frozen, seconds)
+  }
+
   update(target: CameraTarget, dt: number): void {
     const t = this.tuning
+
+    // The camera's own clock. Everything below smooths against this rather than
+    // the frame's dt, so a freeze holds the pose without stopping the world.
+    if (this.frozen > 0) {
+      this.frozen = Math.max(0, this.frozen - dt)
+      dt = 0
+    }
 
     // Blend the car's heading toward its actual direction of travel so a drift
     // shows as the car sliding across the frame rather than the world lurching.
@@ -160,7 +207,9 @@ export class ChaseCamera {
     this.camera.lookAt(this.lookAt)
 
     const speedRatio = clamp(Math.abs(target.speed) / target.maxSpeed, 0, 1)
-    this.camera.fov = t.baseFov + t.fovAtSpeed * speedRatio * speedRatio
+    const wantedFov = t.baseFov + t.fovAtSpeed * speedRatio * speedRatio
+    this.fov += (wantedFov - this.fov) * Math.min(1, t.fovStiffness * dt)
+    this.camera.fov = this.fov
     this.camera.updateProjectionMatrix()
   }
 

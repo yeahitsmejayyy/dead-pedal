@@ -132,6 +132,8 @@ if (import.meta.env.DEV) {
       world: (): WorldState => current,
       drawCalls: (): number => renderer.drawCalls,
       cameraPosition: () => renderer.chase.camera.position.clone(),
+      fov: (): number => renderer.chase.camera.fov,
+      particles: () => renderer.effects.particleCounts(),
       // Lets the e2e suite park the opposition. Tests about ramming and
       // destruction are about those mechanics, not about whether a bot will
       // hold still for them.
@@ -234,13 +236,33 @@ function frame(now: number): void {
     previous = current
     current = step(current, inputs)
 
-    renderer.effects.consume(current.events)
+    // Vehicles as well as events: sparks need the damaged car's own position,
+    // because a blast's `pos` is the explosion centre rather than the car.
+    renderer.effects.consume(current.events, current.vehicles)
 
     // Only what happens to the player shakes the player's camera.
     const player = current.vehicles[PLAYER]
+
+    // How much speed the player actually lost this tick. Hit-stop is gated on
+    // this rather than on impact magnitude, and the distinction is the whole
+    // trick: freezing the camera while the car is still travelling just lets
+    // the car run away from it — measured at 46 m/s the chase spring already
+    // trails 14.2m, and a freeze stretches that to 18.1m before reeling back.
+    // Freezing when the car has been *stopped* is the opposite motion, and the
+    // one that reads as impact.
+    const before = previous.vehicles[PLAYER]
+    const lostSpeed =
+      before === undefined || player === undefined
+        ? 0
+        : Math.hypot(before.vel.x, before.vel.z) - Math.hypot(player.vel.x, player.vel.z)
+
     for (const event of current.events) {
       if (event.type === 'impact' && event.id === PLAYER) {
         renderer.chase.addShake(event.magnitude)
+        // 12 m/s of speed shed in one tick is a genuine crash rather than a
+        // scrape. Scaled from there and capped, so being shunted by a bot is a
+        // flicker and putting it into a wall at full speed is a beat.
+        if (lostSpeed > 12) renderer.chase.hitStop(Math.min(0.09, lostSpeed * 0.0035))
       } else if (event.type === 'landed' && event.id === PLAYER) {
         renderer.chase.addShake(event.magnitude * 0.6)
       } else if (event.type === 'damaged' && event.id === PLAYER) {
@@ -252,6 +274,9 @@ function frame(now: number): void {
         if (closeness > 0) renderer.chase.addShake(26 * closeness * closeness)
       } else if (event.type === 'vehicleDestroyed' && event.id === PLAYER) {
         renderer.chase.addShake(45)
+        // The one freeze that is always right: the car is gone, so there is
+        // nothing left to run away from the camera.
+        renderer.chase.hitStop(0.12)
         // Null for an own goal or the arena: there is then nobody to look at,
         // and the death camera falls back to the wreck's own heading.
         killer = event.by

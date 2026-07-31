@@ -382,6 +382,7 @@ export class Renderer {
     }
 
     this.healthBars.update(current.vehicles, this.chase.camera, followId)
+    this.effects.syncSmoke(current.vehicles, dt)
     this.effects.syncProjectiles(current.projectiles)
     this.effects.syncPickups(current.pickups, current.tick, dt)
     this.effects.syncLock(
