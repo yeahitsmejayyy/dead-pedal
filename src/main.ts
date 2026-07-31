@@ -28,6 +28,7 @@ import { DEFAULT_CAMERA } from './view/camera'
 import { Renderer } from './view/renderer'
 import { createDebugPanel } from './ui/debug'
 import { createHud, type HudBlip, type HudLock } from './ui/hud'
+import { createAudio } from './audio'
 
 const PLAYER = 0
 const LOCK_TIME = WEAPONS.homingMissile.homing?.lockTime ?? 1
@@ -97,6 +98,32 @@ const hud = createHud(hudRoot, {
   onRestart: () => reset(),
 })
 
+/**
+ * Sound, and the gesture that starts it.
+ *
+ * `?silent=1` builds no AudioContext at all — the e2e suite runs with it, so 27
+ * tests do not each bake ten buffers and hold a render thread for a path no
+ * assertion observes. Worth knowing that headless Chromium ignores the autoplay
+ * policy entirely (a fresh context comes back `running` with no gesture), so
+ * the suite would survive without this; it is here for the CI core and because
+ * the player needs a real off switch regardless.
+ */
+const audio = createAudio({ silent: new URLSearchParams(location.search).has('silent') })
+
+// No modal, no speaker button to hunt for: the W that starts the car is the
+// gesture. `arm` is idempotent, so firing it on every key and click is fine.
+for (const kind of ['keydown', 'pointerdown'] as const) {
+  window.addEventListener(kind, () => audio.arm(), { passive: true })
+}
+window.addEventListener('keydown', (event) => {
+  if (event.code === 'KeyM') audio.toggleMute()
+})
+// rAF stops when the tab is backgrounded, so `update` stops with it and the
+// engine would otherwise drone on at whatever revs the last frame left.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && !audio.muted()) audio.toggleMute()
+})
+
 const panel = createDebugPanel(
   vehicleTuning,
   cameraTuning,
@@ -134,6 +161,7 @@ if (import.meta.env.DEV) {
       cameraPosition: () => renderer.chase.camera.position.clone(),
       fov: (): number => renderer.chase.camera.fov,
       particles: () => renderer.effects.particleCounts(),
+      audio: () => ({ ...audio.state(), armed: audio.armed(), muted: audio.muted() }),
       // Lets the e2e suite park the opposition. Tests about ramming and
       // destruction are about those mechanics, not about whether a bot will
       // hold still for them.
@@ -164,6 +192,8 @@ let lastFrame = performance.now()
 let fps = 0
 let refreshCountdown = 0
 let lookBack = false
+/** Last sampled throttle, for the engine voice. Load, not speed. */
+let throttleAxis = 0
 
 /** Reused every frame rather than reallocated: this runs at 60fps. */
 const blips: HudBlip[] = []
@@ -228,6 +258,7 @@ function frame(now: number): void {
     // Sampled per tick, not per frame: an InputFrame is a sim-time value.
     const frameInput = playerFrame(current.tick)
     lookBack = frameInput.lookBack
+    throttleAxis = frameInput.throttle
 
     // Bots and the player produce the same shape, and `step` cannot tell them
     // apart. That is the M5 contract, and the reason M8 is a transport problem.
@@ -239,6 +270,13 @@ function frame(now: number): void {
     // Vehicles as well as events: sparks need the damaged car's own position,
     // because a blast's `pos` is the explosion centre rather than the car.
     renderer.effects.consume(current.events, current.vehicles)
+
+    // The ears are the car, not the camera. A chase camera sits eight metres
+    // back, and placing sound there puts every shot you fire behind you.
+    const heard = current.vehicles[PLAYER]
+    if (heard !== undefined) {
+      audio.consume(current.events, { x: heard.pos.x, z: heard.pos.z, yaw: heard.yaw }, PLAYER)
+    }
 
     // Only what happens to the player shakes the player's camera.
     const player = current.vehicles[PLAYER]
@@ -320,6 +358,18 @@ function frame(now: number): void {
       elapsed,
     )
   }
+
+  const driver = current.vehicles[PLAYER]
+  audio.update(
+    {
+      speed: driver?.forwardSpeed ?? 0,
+      maxSpeed: vehicleTuning.maxSpeed,
+      throttle: throttleAxis,
+      grounded: driver?.grounded ?? true,
+      alive: driver !== undefined && driver.health > 0 && acceptsInput(current.match),
+    },
+    elapsed,
+  )
 
   // ── render ─────────────────────────────────────────────────────────────────
   renderer.render(previous, current, alphaOf(clock), elapsed, PLAYER, lookBack)

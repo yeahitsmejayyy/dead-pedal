@@ -20,5 +20,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "tools", "tests", "vite.config.ts", "vitest.config.ts", "playwright.config.ts"]
+  "include": ["src", "tools", "tests", "tracker", "vite.config.ts", "vitest.config.ts", "playwright.config.ts"]
 }
