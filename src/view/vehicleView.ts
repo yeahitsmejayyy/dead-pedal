@@ -23,9 +23,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { clamp, lerp } from '../core/scalar'
 import type { VehicleTuning } from '../content/vehicles'
 import { WEAPONS } from '../content/weapons'
-
-/** Player first, then opponents. Cycled if there are more cars than colours. */
-const LIVERIES = [0xd8452f, 0x3f8ecc, 0x6bbf59, 0xc9a227] as const
+import { LIVERIES } from './palette'
 
 const BODIES = LIVERIES.map(
   (color) => new MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.15 }),

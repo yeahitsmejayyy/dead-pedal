@@ -7,15 +7,27 @@
  */
 import { TICK_DT, advance, alpha as alphaOf, createClock } from './core/clock'
 import { DEFAULT_VEHICLE, tuningFor } from './content/vehicles'
+import { DEATHMATCH } from './content/match'
 import { WEAPONS } from './content/weapons'
 import { InputSource } from './input'
 import { botInputs, createRoster, rosterHealth, type Bot } from './bots'
 import { DEFAULT_DIFFICULTY } from './content/bots'
-import { createWorld, lockableTargets, step, type Inputs, type WorldState } from './sim'
+import {
+  acceptsInput,
+  createWorld,
+  headingOf,
+  isAlive,
+  lockableTargets,
+  step,
+  type EntityId,
+  type InputFrame,
+  type Inputs,
+  type WorldState,
+} from './sim'
 import { DEFAULT_CAMERA } from './view/camera'
 import { Renderer } from './view/renderer'
 import { createDebugPanel } from './ui/debug'
-import { createHud } from './ui/hud'
+import { createHud, type HudBlip, type HudLock } from './ui/hud'
 
 const PLAYER = 0
 const LOCK_TIME = WEAPONS.homingMissile.homing?.lockTime ?? 1
@@ -45,11 +57,29 @@ function onBotsChanged(): void {
   reset()
 }
 
+/**
+ * Seconds after the match ends before R is accepted.
+ *
+ * `DEATHMATCH.intermission` cannot do this job: `stepMatch`'s matchOver branch
+ * returns before it decrements the timer, so in a one-round match that timer is
+ * written once and then frozen. This is a wall clock, held here, and short on
+ * purpose — long enough that a trigger still held at the buzzer cannot skip the
+ * scoreboard, short enough that nobody waits on a screen they have read.
+ */
+const RESULT_GUARD = 1.5
+
+/** Bumped every restart, so a rematch is a new match rather than a replay. */
+let matchSeed = 1
+
 function freshWorld(): WorldState {
   return createWorld({
-    seed: 1,
+    seed: matchSeed,
     vehicles: CARS,
     health: rosterHealth(roster, vehicleTuning.maxHealth),
+    // The line that turns the sandbox into the mode. Everything else in this
+    // file is downstream of it: input is gated for the first three seconds, the
+    // clock picks the winner, and the world freezes on the scoreboard.
+    rules: DEATHMATCH,
   })
 }
 
@@ -60,15 +90,27 @@ const input = new InputSource(window)
 const renderer = new Renderer(canvas, current.arena, cameraTuning)
 const hudRoot = document.getElementById('hud')
 if (hudRoot === null) throw new Error('missing #hud')
-const hud = createHud(hudRoot)
+const hud = createHud(hudRoot, {
+  playerId: PLAYER,
+  arenaHalf: current.arena.halfExtents,
+  roundSeconds: current.rules.roundSeconds,
+})
 
 const panel = createDebugPanel(vehicleTuning, cameraTuning, input.tuning, reset, botSettings, onBotsChanged)
+
+/** Who last wrecked the player. Aims the death camera; cleared on respawn. */
+let killer: EntityId | null = null
+/** `performance.now()` at the final whistle, or null while a match is running. */
+let resultAt: number | null = null
 
 function reset(): void {
   // Roster first: the world's health ceilings are read off it.
   rebuildRoster()
+  matchSeed++
   current = freshWorld()
   previous = current
+  killer = null
+  resultAt = null
 }
 
 window.addEventListener('resize', () => renderer.resize())
@@ -88,6 +130,19 @@ if (import.meta.env.DEV) {
         botSettings.enabled = enabled
         rebuildRoster()
       },
+      /**
+       * Run the round clock down to its last tick.
+       *
+       * Only the clock is touched — the match still ends through the real path,
+       * tallying the real kills, picking the winner with `leaderOnKills` and
+       * raising a real `matchEnded`. The alternative to this affordance is not
+       * testing the end of a match in a browser at all, because the round is
+       * five minutes long and no e2e suite is going to sit through one.
+       */
+      endRound: (): void => {
+        current = { ...current, match: { ...current.match, timer: 1 } }
+        previous = current
+      },
       reset,
     },
   })
@@ -99,11 +154,59 @@ let fps = 0
 let refreshCountdown = 0
 let lookBack = false
 
+/** Reused every frame rather than reallocated: this runs at 60fps. */
+const blips: HudBlip[] = []
+
+let heldCycle = false
+let heldTarget = false
+
+/**
+ * One tick of player intent, safe to take during a frozen phase.
+ *
+ * `sample` CONSUMES its latches — cycling the weapon and cycling the target are
+ * one-shot by construction — and outside a live round `step` throws the whole
+ * frame away. Left alone that means a special chosen during the three-second
+ * countdown is not delayed, it is destroyed, and a key that does nothing is the
+ * kind of thing a player blames on themselves rather than on the game.
+ *
+ * Sampling every tick regardless is what keeps steering and throttle honest at
+ * the instant the round goes live. Carrying the two latches forward is what
+ * stops the press disappearing on the way there.
+ */
+function playerFrame(tick: number): InputFrame {
+  const sampled = input.sample(tick, TICK_DT)
+
+  if (!acceptsInput(current.match)) {
+    heldCycle ||= sampled.cycleWeapon
+    heldTarget ||= sampled.cycleTarget
+    // Returned rather than dropped: `step` ignores it, but this file still
+    // reads `lookBack` off it, and looking around while frozen costs nothing.
+    return { ...sampled, cycleWeapon: false, cycleTarget: false }
+  }
+
+  if (!heldCycle && !heldTarget) return sampled
+
+  const carried: InputFrame = {
+    ...sampled,
+    cycleWeapon: sampled.cycleWeapon || heldCycle,
+    cycleTarget: sampled.cycleTarget || heldTarget,
+  }
+  heldCycle = false
+  heldTarget = false
+  return carried
+}
+
 function frame(now: number): void {
   const elapsed = Math.min((now - lastFrame) / 1000, 0.25)
   lastFrame = now
 
-  if (input.takeReset()) reset()
+  // R restarts, and it is the same R that has always been the reset — one key
+  // meaning "again" beats a second key that only exists on one screen. Swallowed
+  // inside the guard so a shot fired on the buzzer cannot skip the scoreboard.
+  if (input.takeReset()) {
+    const guarded = resultAt !== null && now - resultAt < RESULT_GUARD * 1000
+    if (!guarded) reset()
+  }
 
   const { clock: nextClock, steps } = advance(clock, elapsed)
   clock = nextClock
@@ -112,7 +215,7 @@ function frame(now: number): void {
   const simStart = performance.now()
   for (let i = 0; i < steps; i++) {
     // Sampled per tick, not per frame: an InputFrame is a sim-time value.
-    const frameInput = input.sample(current.tick, TICK_DT)
+    const frameInput = playerFrame(current.tick)
     lookBack = frameInput.lookBack
 
     // Bots and the player produce the same shape, and `step` cannot tell them
@@ -140,10 +243,49 @@ function frame(now: number): void {
         if (closeness > 0) renderer.chase.addShake(26 * closeness * closeness)
       } else if (event.type === 'vehicleDestroyed' && event.id === PLAYER) {
         renderer.chase.addShake(45)
+        // Null for an own goal or the arena: there is then nobody to look at,
+        // and the death camera falls back to the wreck's own heading.
+        killer = event.by
+      } else if (event.type === 'vehicleRespawned' && event.id === PLAYER) {
+        killer = null
+      } else if (event.type === 'matchEnded') {
+        resultAt = now
       }
     }
   }
   const simMs = performance.now() - simStart
+
+  // ── the death camera ───────────────────────────────────────────────────────
+  // `Renderer.render` skips a wreck outright — the `continue` lands before the
+  // follow branch — so a dead player's camera is never updated at all. It does
+  // not merely sit still: it freezes mid-smoothing with the last frame's shake
+  // baked in as a permanent offset, holds it for the full three seconds, then
+  // snaps back on respawn. Driving it from here fixes that without teaching the
+  // renderer about death, because `render` will not overwrite a car it skipped.
+  //
+  // It looks at whoever did it. Three seconds of a frozen frame is the thing
+  // the mode exists to avoid; three seconds of watching the car that killed you
+  // is something you can spend the moment you are back.
+  const wreck = current.vehicles[PLAYER]
+  if (wreck !== undefined && !isAlive(wreck)) {
+    const by = killer === null ? undefined : current.vehicles.find((v) => v.id === killer)
+    const yaw =
+      by === undefined ? wreck.yaw : headingOf(by.pos.x - wreck.pos.x, by.pos.z - wreck.pos.z)
+
+    renderer.chase.update(
+      {
+        x: wreck.pos.x,
+        y: wreck.pos.y,
+        z: wreck.pos.z,
+        yaw,
+        headingYaw: null,
+        speed: 0,
+        maxSpeed: vehicleTuning.maxSpeed,
+        lookBack,
+      },
+      elapsed,
+    )
+  }
 
   // ── render ─────────────────────────────────────────────────────────────────
   renderer.render(previous, current, alphaOf(clock), elapsed, PLAYER, lookBack)
@@ -157,6 +299,40 @@ function frame(now: number): void {
     hud.setAlive(
       car.health > 0,
       car.respawnAt === null ? 0 : (car.respawnAt - current.tick) * TICK_DT,
+    )
+    hud.setAmmo(car.ammo.machineGun)
+
+    const lock: HudLock =
+      car.selectedSpecial !== 'homingMissile' || car.lockTarget === null
+        ? 'none'
+        : car.lockTime >= LOCK_TIME
+          ? 'locked'
+          : 'locking'
+    hud.setSpecial(car.selectedSpecial, car.ammo, lock)
+
+    blips.length = 0
+    for (const other of current.vehicles) {
+      if (other.id === PLAYER) continue
+      blips.push({
+        id: other.id,
+        x: other.pos.x,
+        z: other.pos.z,
+        alive: other.health > 0,
+        locked: car.lockTarget === other.id,
+      })
+    }
+    hud.setRadar(car.pos.x, car.pos.z, car.yaw, blips)
+
+    // `match.timer` means three different things depending on the phase —
+    // countdown remaining, round remaining, and in matchOver a constant, since
+    // `stepMatch` returns from that branch before decrementing. The HUD is told
+    // the phase for exactly that reason rather than being handed a bare number.
+    const { match } = current
+    hud.setRound(
+      match.phase,
+      match.timer * TICK_DT,
+      match.scores,
+      match.phase === 'matchOver' ? match.matchWinner : match.roundWinner,
     )
 
     const r = panel.readouts

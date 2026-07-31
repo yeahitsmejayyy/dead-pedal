@@ -41,11 +41,63 @@ export function allowsRespawn(match: MatchState, rules: MatchRules): boolean {
 }
 
 /**
+ * Credit this tick's kills.
+ *
+ * A kill only counts for the car that caused it, which is what `by` already
+ * records. Driving yourself into your own mine, or off something that kills you
+ * with nobody involved, scores for nobody — an own goal should not read on the
+ * board the same way as beating someone, and letting it would make suicide a
+ * viable strategy in a mode decided on kill count.
+ *
+ * Returns the same array when nothing died, so the common case allocates
+ * nothing: this runs every tick of every match.
+ */
+export function tallyKills(scores: readonly number[], events: readonly SimEvent[]): number[] {
+  let next: number[] | null = null
+
+  for (const event of events) {
+    if (event.type !== 'vehicleDestroyed') continue
+    if (event.by === null || event.by === event.id) continue
+
+    next ??= scores.slice()
+    next[event.by] = (next[event.by] ?? 0) + 1
+  }
+
+  return next ?? (scores as number[])
+}
+
+/**
+ * Who has the most kills.
+ *
+ * Returns null on an exact tie at the top, which is a real outcome rather than
+ * an error — PLAN.md names "timer expiry with a tie" as an edge case worth
+ * testing, and in a mode with no tiebreak the honest answer is that nobody won.
+ */
+export function leaderOnKills(scores: readonly number[]): EntityId | null {
+  let best: EntityId | null = null
+  let bestScore = -Infinity
+  let tied = false
+
+  for (let id = 0; id < scores.length; id++) {
+    const score = scores[id]!
+    if (score > bestScore) {
+      best = id
+      bestScore = score
+      tied = false
+    } else if (score === bestScore) {
+      tied = true
+    }
+  }
+
+  return tied ? null : best
+}
+
+/**
  * Who is winning on health right now.
  *
- * Used when the clock runs out. Returns null on an exact tie, which is a real
- * outcome and not an error — PLAN.md names "timer expiry with a tie" as an edge
- * case worth testing, and the honest answer is that nobody won the round.
+ * Not used by deathmatch, which is decided on kills. Kept because a mode that
+ * ends on a clock with no kills scored needs *some* answer, and "whoever is
+ * least beaten up" is the least arbitrary one available.
  */
 export function leaderOnHealth(vehicles: readonly Vehicle[]): EntityId | null {
   let best: EntityId | null = null
@@ -87,6 +139,7 @@ export function stepMatch(
   match: MatchState,
   rules: MatchRules,
   vehicles: readonly Vehicle[],
+  tickEvents: readonly SimEvent[],
 ): MatchStep {
   const events: SimEvent[] = []
   const timer = match.timer - 1
@@ -104,37 +157,43 @@ export function stepMatch(
     }
 
     case 'live': {
+      // Kills are counted as they happen rather than reconstructed at the end.
+      // Nothing can die outside a live round — weapons are gated on the same
+      // phase — so this is the only place a score can move.
+      const scores = tallyKills(match.scores, tickEvents)
       const standing = vehicles.filter(isAlive)
 
       // Elimination first: a round decided by the last car moving should not
       // wait for the clock, and a clock that expires on the same tick as the
-      // final kill should read as the kill.
+      // final kill should read as the kill. Deathmatch never takes this branch.
       const eliminated = rules.eliminate && standing.length <= 1
       const expired = timer <= 0
-      if (!eliminated && !expired) return { match: { ...match, timer }, events, resetArena: false }
+      if (!eliminated && !expired) {
+        return { match: { ...match, timer, scores }, events, resetArena: false }
+      }
 
       // Everyone dying together is a draw, not a win for whoever is first in
       // the array. PLAN.md calls out simultaneous elimination by name.
       const winner = eliminated
         ? (standing.length === 1 ? standing[0]!.id : null)
-        : leaderOnHealth(vehicles)
-
-      const scores = match.scores.slice()
-      if (winner !== null) scores[winner] = (scores[winner] ?? 0) + 1
+        : leaderOnKills(scores)
 
       events.push({ type: 'roundEnded', round: match.round, winner, onTime: !eliminated })
 
-      const champion = winner !== null && (scores[winner] ?? 0) >= rules.roundsToWin ? winner : null
-      if (champion !== null) events.push({ type: 'matchEnded', winner: champion })
+      // The match ends when the rounds run out, not when someone reaches a
+      // score. A deathmatch is one round, so the clock and the match end
+      // together — and a draw ends it just as firmly as a win does.
+      const over = match.round >= rules.rounds
+      if (over) events.push({ type: 'matchEnded', winner })
 
       return {
         match: {
           ...match,
-          phase: champion !== null ? 'matchOver' : 'roundOver',
+          phase: over ? 'matchOver' : 'roundOver',
           timer: seconds(rules.intermission),
           scores,
           roundWinner: winner,
-          matchWinner: champion,
+          matchWinner: over ? winner : null,
         },
         events,
         resetArena: false,

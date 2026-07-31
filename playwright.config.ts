@@ -13,7 +13,13 @@ export default defineConfig({
     viewport: { width: 1280, height: 720 },
   },
   webServer: {
-    command: `npm run dev -- --port ${PORT} --strictPort`,
+    // PORT rather than `--port`, and the difference matters. A CLI `--port`
+    // reaches the dev server but not `vite.config.ts`, which reads the env var
+    // to pick a per-port `cacheDir`. Passed as a flag, this server would share
+    // `node_modules/.vite` with a dev server already running on 5173, and the
+    // two would take turns invalidating each other's pre-bundled deps — which
+    // looks, from the outside, like a server restarting on its own.
+    command: `PORT=${PORT} npm run dev`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: true,
     timeout: 60_000,

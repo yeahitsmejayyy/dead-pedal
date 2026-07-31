@@ -5,21 +5,24 @@
  *     condition
  *   - Perf: eight bots' decision cost measured per tick and budgeted
  *
- * The win condition is the one part that cannot land yet — the match state
- * machine is M6 — so the soak asserts the strongest thing available today: the
- * match stays finite, the bots keep fighting, and nothing goes non-finite. The
- * `it.todo` at the bottom holds the gap open rather than letting it be
- * forgotten.
+ * The win condition landed with M6, so the soak at the bottom now plays real
+ * matches through to `matchOver` at every tier, rather than the weaker "nothing
+ * went non-finite" it had to settle for while the state machine did not exist.
+ * A draw counts: the claim is that a match always *ends*, not that somebody
+ * always wins — at Base Form most of them do not.
  */
 import { describe, expect, it } from 'vitest'
 import { TICK_HZ } from '../../src/core/clock'
 import * as V from '../../src/core/vec3'
 import { DIFFICULTIES, DIFFICULTY_ORDER } from '../../src/content/bots'
+import { QUICK_RULES } from '../../src/content/match'
 import { Bot, botInputs, createRoster, rosterHealth } from '../../src/bots'
 import { VEHICLES } from '../../src/content/vehicles'
 import {
   NEUTRAL_INPUT,
   createWorld,
+  leaderOnKills,
+  seconds,
   step,
   type Inputs,
   type WorldState,
@@ -355,7 +358,56 @@ describe('bot-vs-bot soak', () => {
     expect(result.kills).toBeGreaterThan(0)
   })
 
-  it.todo('every match reaches a win condition — needs M6 match flow')
+  it('every match reaches a win condition, at every tier', () => {
+    // The last line of PLAN.md M5 that had to wait for M6. Termination is a
+    // property of the clock rather than of the fighting, so `QUICK_RULES` tests
+    // it exactly as well as the real five minutes does and costs 1,260 ticks
+    // instead of 18,180 — twelve matches here run in about the time one real
+    // deathmatch takes. The full-length version lives in tests/replay.
+    //
+    // All three tiers, because the thing that could plausibly hang is a bot,
+    // not the state machine. Four seeds each is enough to catch a tier that
+    // stalls without turning the unit suite into a soak.
+    //
+    // Most of these end 0-0: four Base Form bots score about one kill per five
+    // minutes, so twenty seconds of them is a draw nearly every time. That is
+    // still a win condition. A draw is the match *ending* with nobody ahead —
+    // the failure this guards against is a match that never ends at all.
+    const CLOCK = seconds(QUICK_RULES.countdown) + seconds(QUICK_RULES.roundSeconds)
+
+    for (const difficulty of DIFFICULTY_ORDER) {
+      for (const seed of [1, 2, 3, 4]) {
+        const where = `${difficulty} seed ${seed}`
+        // `humans: []` or car 0 gets no bot and sits parked as a punching bag,
+        // and `seed` is the bot seed, distinct from the world seed above.
+        const roster = createRoster(4, { humans: [], difficulty, seed })
+        let world = createWorld({
+          seed,
+          vehicles: 4,
+          rules: QUICK_RULES,
+          health: rosterHealth(roster, VEHICLES.roadster!.maxHealth),
+        })
+
+        // A second of slack past the clock, and bounded so a match that hangs
+        // fails an assertion instead of the suite.
+        let ticks = 0
+        while (world.match.phase !== 'matchOver' && ticks < CLOCK + TICK_HZ) {
+          world = step(world, botInputs(roster, world))
+          ticks++
+        }
+
+        expect(world.match.phase, `${where}: never reached a win condition`).toBe('matchOver')
+        expect(ticks, `${where}: did not end on the clock`).toBe(CLOCK)
+
+        // Well formed, not merely finished: a real result names a leader or
+        // honestly reports that there wasn't one.
+        const { scores, matchWinner, roundWinner } = world.match
+        expect(scores, `${where}: a score per car`).toHaveLength(4)
+        expect(matchWinner, `${where}: winner disagrees with the board`).toBe(leaderOnKills(scores))
+        expect(roundWinner, `${where}: the last round is the match`).toBe(matchWinner)
+      }
+    }
+  })
 })
 
 describe('perf', () => {

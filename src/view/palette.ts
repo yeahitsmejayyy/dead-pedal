@@ -14,6 +14,21 @@
 /** sRGB bytes. */
 export type Rgb = readonly [number, number, number]
 
+/**
+ * Car paint. Player first, then opponents, cycled if there are more cars.
+ *
+ * Here rather than in `vehicleView.ts` for the same reason the health ramp is:
+ * the radar draws a blip per car and has to agree with the paint on the car, and
+ * a second copy of these four numbers is a second copy that can drift.
+ */
+export const LIVERIES = [0xd8452f, 0x3f8ecc, 0x6bbf59, 0xc9a227] as const
+
+/** A car's paint as a CSS colour, for the DOM overlay and the radar. */
+export function liveryCss(id: number): string {
+  const hex = LIVERIES[((id % LIVERIES.length) + LIVERIES.length) % LIVERIES.length]!
+  return `#${hex.toString(16).padStart(6, '0')}`
+}
+
 const FULL: Rgb = [0x4a, 0xde, 0x80]
 const HURT: Rgb = [0xfa, 0xcc, 0x15]
 const CRITICAL: Rgb = [0xef, 0x44, 0x44]

@@ -48,6 +48,8 @@ export {
   allowsRespawn,
   initialMatch,
   leaderOnHealth,
+  leaderOnKills,
+  tallyKills,
   seconds,
   stepMatch,
 } from './match'

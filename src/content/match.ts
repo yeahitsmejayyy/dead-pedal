@@ -16,30 +16,40 @@ export type MatchRules = {
   readonly roundSeconds: number
   /** Seconds between a round ending and the next countdown. */
   readonly intermission: number
-  /** Rounds a car must win to take the match. */
-  readonly roundsToWin: number
+  /** Rounds the match runs. Deathmatch is one; the mode is the clock. */
+  readonly rounds: number
 
   /**
    * Wrecks stay down until the round ends.
    *
-   * This is what turns M3's respawn into a *round*. With respawn on there is no
-   * such thing as being eliminated, so there is nothing for a round to be
-   * about; with it off, the last car moving wins and the timer is only there to
-   * stop two cowards circling each other forever.
+   * Off for deathmatch, and that is a design position rather than a default.
+   * Elimination means the first player out watches the other three finish, and
+   * being made to spectate the game you sat down to play is the worst thing a
+   * mode can do to someone. Kept as a flag because a last-car-standing mode is
+   * a reasonable thing to want later — but nothing ships with it today.
    */
   readonly eliminate: boolean
 }
 
-export const DEFAULT_RULES: MatchRules = {
+/**
+ * The mode. Five minutes, most kills, and you always come back.
+ *
+ * Scoring is kills rather than rounds won, which is why `MatchState.scores`
+ * counts kills: with one round there is nothing else for a score to mean. A
+ * dead heat is a draw and is reported as one — there is no tiebreak, because
+ * inventing one (most damage? fewest deaths?) would decide the match on a
+ * statistic nobody was watching.
+ */
+export const DEATHMATCH: MatchRules = {
   label: 'Deathmatch',
   countdown: 3,
-  // Long enough that a round is normally decided by elimination, short enough
-  // that a stalemate is not something you sit through.
-  roundSeconds: 90,
-  intermission: 4,
-  // Best of three.
-  roundsToWin: 2,
-  eliminate: true,
+  roundSeconds: 300,
+  // Long enough to read the scoreboard, short enough that nobody is waiting on
+  // it. There is no next round to prepare for — this is the gap before you can
+  // start another match.
+  intermission: 8,
+  rounds: 1,
+  eliminate: false,
 }
 
 /**
@@ -58,16 +68,16 @@ export const SANDBOX_RULES: MatchRules = {
   // and `Infinity` does not survive `JSON.stringify`.
   roundSeconds: 7200,
   intermission: 0,
-  roundsToWin: Number.MAX_SAFE_INTEGER,
+  // Never reach the last round, so the two hours never turn into a scoreboard.
+  rounds: Number.MAX_SAFE_INTEGER,
   eliminate: false,
 }
 
-/** A round that resolves fast, for tests and for the headless runner. */
+/** The same mode, resolved fast, for tests and the headless runner. */
 export const QUICK_RULES: MatchRules = {
-  ...DEFAULT_RULES,
+  ...DEATHMATCH,
   label: 'Quick',
   countdown: 1,
   roundSeconds: 20,
   intermission: 1,
-  roundsToWin: 2,
 }

@@ -91,7 +91,7 @@ export function step(world: WorldState, inputs: Inputs): WorldState {
 
   // Last, so "is anyone left standing" is asked of the world as it now is,
   // rather than as it was before this tick's damage landed.
-  const decided = stepMatch(world.match, world.rules, stocked.vehicles)
+  const decided = stepMatch(world.match, world.rules, stocked.vehicles, events)
   events.push(...decided.events)
 
   const fresh = decided.resetArena

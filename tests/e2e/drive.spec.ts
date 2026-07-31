@@ -107,6 +107,39 @@ async function ticks(page: Page, count: number): Promise<void> {
 /** Seconds of sim time, as ticks. The sim runs at a fixed 60Hz. */
 const simSeconds = (value: number): number => Math.round(value * 60)
 
+/**
+ * Wait for the round to actually start.
+ *
+ * The browser runs a real deathmatch, which opens with a three-second countdown
+ * where `step` substitutes `NO_INPUT` for everyone. Every test below that drives
+ * or shoots has to be past that, and the failure it causes is nasty in both
+ * directions: some tests go red because the car never moved, but others — the
+ * ones asserting that something *does not* happen — go green while testing
+ * nothing at all, because a frozen car trivially satisfies them.
+ *
+ * Waiting is deliberately how this is done. A sandbox back-door would make the
+ * suite stop exercising the path the player actually gets, which is most of what
+ * these tests are for. Three seconds a test is the honest price.
+ */
+async function live(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () =>
+      (
+        window as unknown as { __deadPedal: { world: () => { match: { phase: string } } } }
+      ).__deadPedal.world().match.phase === 'live',
+    undefined,
+    { timeout: 15_000 },
+  )
+}
+
+/** Start a fresh match and wait for it to go live. */
+async function restart(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    ;(window as unknown as { __deadPedal: { reset: () => void } }).__deadPedal.reset()
+  })
+  await live(page)
+}
+
 /** Hold a set of keys for `ms` of real time, and make sure the press lands. */
 async function hold(page: Page, keys: string[], ms: number): Promise<void> {
   for (const key of keys) await page.keyboard.down(key)
@@ -130,8 +163,10 @@ test.describe('M1–M5 — driving, contact, weapons, lock-on and bots', () => {
 
     await page.goto('/')
     await page.waitForFunction(() => '__deadPedal' in window)
-    // Let the loop settle before measuring anything.
+    // Let the loop settle, then wait out the countdown. Nothing below this line
+    // can drive, shoot or steer until the round is live.
     await page.waitForTimeout(300)
+    await live(page)
   })
 
   test('renders without console errors', async ({ page }) => {
@@ -192,9 +227,7 @@ test.describe('M1–M5 — driving, contact, weapons, lock-on and bots', () => {
     expect(right.x - start.x, 'D should move the car toward -X').toBeLessThan(-2)
     expect(right.yaw).toBeGreaterThan(start.yaw)
 
-    await page.evaluate(() => {
-      ;(window as unknown as { __deadPedal: { reset: () => void } }).__deadPedal.reset()
-    })
+    await restart(page)
     await hold(page, ['w'], 1200)
     await hold(page, ['w', 'a'], 900)
     const left = await probe(page)
@@ -233,9 +266,7 @@ test.describe('M1–M5 — driving, contact, weapons, lock-on and bots', () => {
     await hold(page, ['w', 'd'], 700)
     const gripped = await probe(page)
 
-    await page.evaluate(() => {
-      ;(window as unknown as { __deadPedal: { reset: () => void } }).__deadPedal.reset()
-    })
+    await restart(page)
     await hold(page, ['w'], 2000)
     await hold(page, ['w', 'd', ' '], 700)
     const drifting = await probe(page)
@@ -265,9 +296,7 @@ test.describe('M1–M5 — driving, contact, weapons, lock-on and bots', () => {
     // because "did I move it" is not a question you can ask about a car that is
     // driving itself.
     await stopBots(page)
-    await page.evaluate(() => {
-      ;(window as unknown as { __deadPedal: { reset: () => void } }).__deadPedal.reset()
-    })
+    await restart(page)
     await page.waitForTimeout(200)
     await stopBots(page)
 
@@ -320,9 +349,7 @@ test.describe('M1–M5 — driving, contact, weapons, lock-on and bots', () => {
 
   test('destroys the target and brings it back', async ({ page }) => {
     await stopBots(page)
-    await page.evaluate(() => {
-      ;(window as unknown as { __deadPedal: { reset: () => void } }).__deadPedal.reset()
-    })
+    await restart(page)
     await page.waitForTimeout(200)
     await stopBots(page)
 
@@ -574,6 +601,72 @@ test.describe('M1–M5 — driving, contact, weapons, lock-on and bots', () => {
     expect(labels).toContain('Base Form')
     expect(labels).toContain('Super Saiyan')
     expect(labels).toContain('Ultra Instinct')
+  })
+
+  test('a match ends on the clock, shows a result, and another one starts', async ({ page }) => {
+    // PLAN.md's done-when for M6, verbatim: "you can start a match, lose it, and
+    // immediately start another without reloading the page."
+    const match = () =>
+      page.evaluate(() => {
+        const w = (
+          window as unknown as {
+            __deadPedal: {
+              world: () => {
+                tick: number
+                match: { phase: string; scores: number[]; matchWinner: number | null }
+              }
+            }
+          }
+        ).__deadPedal.world()
+        const board = document.querySelector('.hud-board')
+        const title = document.querySelector('.hud-board-title')
+        return {
+          tick: w.tick,
+          phase: w.match.phase,
+          scores: w.match.scores,
+          winner: w.match.matchWinner,
+          boardShown: board?.classList.contains('is-shown') ?? false,
+          verdict: title?.textContent ?? '',
+        }
+      })
+
+    const playing = await match()
+    expect(playing.phase, 'the match never went live').toBe('live')
+
+    // Only the clock is skipped. Everything about the ending is the real path.
+    await page.evaluate(() => {
+      ;(window as unknown as { __deadPedal: { endRound: () => void } }).__deadPedal.endRound()
+    })
+    await page.waitForFunction(
+      () =>
+        (
+          window as unknown as { __deadPedal: { world: () => { match: { phase: string } } } }
+        ).__deadPedal.world().match.phase === 'matchOver',
+      undefined,
+      { timeout: 10_000 },
+    )
+
+    const over = await match()
+    expect(over.boardShown, 'no result card at the end of the match').toBe(true)
+    // A draw is a real outcome here and reads as one — the board must never
+    // crown car 0 for being first in an array.
+    expect(over.verdict).toMatch(/YOU WIN|P[0-9] WINS|DRAW/)
+    if (over.winner === null) expect(over.verdict).toBe('DRAW')
+
+    // The world is frozen on the board: no phase can follow matchOver.
+    await page.waitForTimeout(500)
+    expect((await match()).phase).toBe('matchOver')
+
+    // R, past the 1.5s guard that stops a shot on the buzzer skipping the board.
+    await page.waitForTimeout(1600)
+    await page.keyboard.press('r')
+    await live(page)
+
+    const again = await match()
+    expect(again.phase).toBe('live')
+    expect(again.scores, 'the new match kept the old scores').toEqual([0, 0, 0, 0])
+    expect(again.tick, 'the world was not rebuilt').toBeLessThan(over.tick)
+    expect((await match()).boardShown, 'the result card outlived its match').toBe(false)
   })
 
   test('stays inside the draw-call budget', async ({ page }) => {

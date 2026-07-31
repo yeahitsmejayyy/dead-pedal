@@ -12,8 +12,9 @@
  */
 import { parseArgs } from 'node:util'
 import { TICK_HZ } from '../src/core/clock'
-import { botInputs, createRoster } from '../src/bots'
+import { botInputs, createRoster, rosterHealth } from '../src/bots'
 import { createWorld, isAlive, step } from '../src/sim'
+import { DEFAULT_VEHICLE, tuningFor } from '../src/content/vehicles'
 
 const { values } = parseArgs({
   options: {
@@ -39,7 +40,14 @@ const started = performance.now()
 for (let match = 0; match < matches; match++) {
   // Every car is a bot: no humans.
   const roster = createRoster(cars, { humans: [], difficulty: values.difficulty, seed: match + 1 })
-  let world = createWorld({ seed: match + 1, vehicles: cars })
+  // Without this every tier runs at player health and `toughness` does nothing,
+  // so a harder tier measures as *easier* — it dies at the same rate while
+  // shooting better. Wired the way main.ts wires it.
+  let world = createWorld({
+    seed: match + 1,
+    vehicles: cars,
+    health: rosterHealth(roster, tuningFor(DEFAULT_VEHICLE).maxHealth),
+  })
 
   let kills = 0
   let shots = 0
