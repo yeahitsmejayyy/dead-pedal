@@ -8,7 +8,15 @@
 import { describe, expect, it } from 'vitest'
 import { Color } from 'three'
 import { healthColour as barColour } from '../../src/view/healthBars'
-import { healthCss, healthRgb } from '../../src/view/palette'
+import {
+  LIVERIES,
+  PICKUP_COLOURS,
+  healthCss,
+  healthRgb,
+  pickupCss,
+  pickupHex,
+} from '../../src/view/palette'
+import { WEAPONS } from '../../src/content/weapons'
 
 const rgb = (css: string): number[] =>
   css.match(/\d+/g)!.map(Number)
@@ -97,5 +105,60 @@ describe('the health colour ramp', () => {
           .toBeLessThanOrEqual(2)
       }
     }
+  })
+})
+
+/**
+ * Crate colour is a legend, and a legend only works if it is complete.
+ *
+ * The crate in the arena and the pip in the HUD read the same map, so they
+ * cannot disagree with each other. What they *can* do is silently say nothing:
+ * add a weapon, forget the colour, and `pickupHex` falls back to the old olive —
+ * which is not an error anywhere, just a crate that has stopped explaining
+ * itself. That is what these pin.
+ */
+describe('what is in the crate, by colour', () => {
+  it('has a colour for every weapon a crate can hold', () => {
+    for (const id of Object.keys(WEAPONS)) {
+      expect(PICKUP_COLOURS, `no crate colour for ${id}`).toHaveProperty(id)
+    }
+  })
+
+  it('has a colour for the crates that are not weapons', () => {
+    expect(PICKUP_COLOURS).toHaveProperty('health')
+    expect(PICKUP_COLOURS).toHaveProperty('armour')
+  })
+
+  const apart = (a: number, b: number): number =>
+    Math.hypot(((a >> 16) & 0xff) - ((b >> 16) & 0xff), ((a >> 8) & 0xff) - ((b >> 8) & 0xff), (a & 0xff) - (b & 0xff))
+
+  it('gives every crate a colour of its own', () => {
+    const seen = Object.entries(PICKUP_COLOURS)
+    for (const [[ka, a], [kb, b]] of seen.flatMap((x, i) => seen.slice(i + 1).map((y) => [x, y] as const))) {
+      // 80 in sRGB. The tightest real pair is health against armour at 88 —
+      // both are green-blue "good pickup" colours and that is fine, because
+      // taking the wrong one is never a mistake worth punishing.
+      expect(apart(a, b), `${ka} and ${kb} are the same colour`).toBeGreaterThan(80)
+    }
+  })
+
+  it('keeps crates clear of the cars, which are the other coloured things', () => {
+    // A rocket crate the same orange as a car is the confusion the scheme
+    // exists to remove, so this is asserted rather than assumed. It has already
+    // earned its place once: the obvious palette put rocket 60 from the gold
+    // car, hazard yellow 68, and health green 60 from the green car, and this
+    // test is what said so. The tightest surviving pair is rocket at 99.
+    for (const [key, crate] of Object.entries(PICKUP_COLOURS)) {
+      for (const car of LIVERIES) {
+        expect(apart(crate, car), `${key} is too close to a car's paint`).toBeGreaterThan(90)
+      }
+    }
+  })
+
+  it('reports the same colour to the scene and to the HUD', () => {
+    // One reads a packed hex for three.js, the other a CSS string for a pip.
+    // Two readers of one table is fine; two tables would not be.
+    expect(pickupCss('rocket')).toBe(`#${pickupHex('rocket').toString(16).padStart(6, '0')}`)
+    expect(pickupHex('homingMissile')).toBe(PICKUP_COLOURS.homingMissile)
   })
 })

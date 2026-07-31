@@ -29,6 +29,7 @@ import {
 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { clamp } from '../core/scalar'
+import { pickupHex } from './palette'
 import { weaponFor } from '../content/weapons'
 import type { Pickup, Projectile, SimEvent, Vehicle } from '../sim'
 
@@ -125,6 +126,8 @@ export class Effects {
   private readonly rockets: Mesh[] = []
   private readonly mines: Mesh[] = []
   private readonly crates: Mesh[] = []
+  /** What each crate slot is currently painted as, so the colour is set once. */
+  private readonly crateKeys: string[] = []
   private readonly lockRing: Mesh
   private spin = 0
 
@@ -206,6 +209,8 @@ export class Effects {
     }
 
     // ── weapon crates ────────────────────────────────────────────────────────
+    // A material each, not one shared: the colour is what says which weapon is
+    // inside, so the crates cannot be allowed to agree on one.
     const crateGeometry = new BoxGeometry(1.5, 1.5, 1.5)
     for (let i = 0; i < MAX_CRATES; i++) {
       const mesh = new Mesh(
@@ -279,6 +284,22 @@ export class Effects {
       const available = tick >= pickup.availableAt
       mesh.visible = available
       if (!available) continue
+
+      // What is in the crate, painted on the crate. Assigned here rather than at
+      // construction because slot `i` is whatever pickup `i` happens to be, and
+      // that mapping is only known once an arena is loaded. Guarded on a change
+      // so a stable arena writes each material exactly once, not 60 times a
+      // second — `Color.set` is cheap but it dirties the uniform either way.
+      const key = pickup.kind === 'weapon' ? (pickup.weapon ?? '') : pickup.kind
+      if (this.crateKeys[i] !== key) {
+        this.crateKeys[i] = key
+        const material = mesh.material as MeshStandardMaterial
+        const hex = pickupHex(key)
+        material.color.setHex(hex)
+        // A tenth of the body colour, so a crate glows its own hue in shadow
+        // instead of going grey and losing the one thing it is trying to say.
+        material.emissive.setHex(hex).multiplyScalar(0.18)
+      }
 
       // A slow bob and turn, so a crate reads as collectable rather than as
       // scenery you should be avoiding.

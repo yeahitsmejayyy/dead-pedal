@@ -53,7 +53,7 @@ function rebuildRoster(): void {
 }
 
 /** Changing tier changes how tough they are, so the match has to start over. */
-function onBotsChanged(): void {
+function onDifficultyChanged(): void {
   reset()
 }
 
@@ -94,9 +94,18 @@ const hud = createHud(hudRoot, {
   playerId: PLAYER,
   arenaHalf: current.arena.halfExtents,
   roundSeconds: current.rules.roundSeconds,
+  onRestart: () => reset(),
 })
 
-const panel = createDebugPanel(vehicleTuning, cameraTuning, input.tuning, reset, botSettings, onBotsChanged)
+const panel = createDebugPanel(
+  vehicleTuning,
+  cameraTuning,
+  input.tuning,
+  reset,
+  botSettings,
+  onDifficultyChanged,
+  rebuildRoster,
+)
 
 /** Who last wrecked the player. Aims the death camera; cleared on respawn. */
 let killer: EntityId | null = null

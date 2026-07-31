@@ -25,8 +25,56 @@ export const LIVERIES = [0xd8452f, 0x3f8ecc, 0x6bbf59, 0xc9a227] as const
 
 /** A car's paint as a CSS colour, for the DOM overlay and the radar. */
 export function liveryCss(id: number): string {
-  const hex = LIVERIES[((id % LIVERIES.length) + LIVERIES.length) % LIVERIES.length]!
+  return hexCss(LIVERIES[((id % LIVERIES.length) + LIVERIES.length) % LIVERIES.length]!)
+}
+
+/**
+ * What each kind of crate is worth, by colour.
+ *
+ * Every crate used to be the same olive box, so the only way to find out what
+ * you had just driven through was to watch the ammo counter afterwards — by
+ * which point you had already spent the detour. The colour is the label.
+ *
+ * Here rather than in `content/weapons.ts` for the reason this file exists: the
+ * crate in the arena and the pip in the HUD have to be the same colour or the
+ * whole scheme teaches the player nothing, and two copies of a colour are two
+ * copies that can drift. Weapons are content; what they look like is view.
+ *
+ * Held clear of the four car liveries, which is harder than it sounds and is
+ * why several of these are lighter than the obvious choice. The cars already
+ * span red, blue, green and gold, so the whole saturated wheel is spoken for:
+ * the natural rocket orange (0xff8c1a) measures 60 from the gold car, plain
+ * hazard yellow 68, and the health green at the top of the bar ramp 60 from the
+ * green car. Every one of those is close enough to misread at distance, on a
+ * bobbing 1.5m cube, in the middle of a fight. Going a step lighter buys the
+ * separation back without giving up the meaning — this health green is still
+ * obviously green.
+ *
+ * The distances are asserted, not eyeballed. See the crate-colour tests.
+ */
+export const PICKUP_COLOURS = {
+  machineGun: 0xe6edf3, // steel-white — the default gun, the plainest crate
+  rocket: 0xff9f7a, // warm, and pushed pale to clear the gold car
+  homingMissile: 0xb44cff, // violet, and nothing else in the scene is violet
+  mine: 0xfff35c, // hazard yellow, which is what a mine is
+  health: 0x86ffb0, // the health ramp's green, lightened off the green car
+  armour: 0x7dd3fc, // ice blue: related to health, plainly not the same thing
+} as const
+
+export type PickupColourKey = keyof typeof PICKUP_COLOURS
+
+function hexCss(hex: number): string {
   return `#${hex.toString(16).padStart(6, '0')}`
+}
+
+/** The crate colour for a pickup, as a packed hex for three.js. */
+export function pickupHex(key: string): number {
+  return PICKUP_COLOURS[key as PickupColourKey] ?? 0x8a8f3c
+}
+
+/** The same colour as CSS, for the HUD pips. */
+export function pickupCss(key: string): string {
+  return hexCss(pickupHex(key))
 }
 
 const FULL: Rgb = [0x4a, 0xde, 0x80]

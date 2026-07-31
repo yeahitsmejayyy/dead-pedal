@@ -49,7 +49,10 @@ export function createDebugPanel(
   input: InputTuning,
   onReset: () => void,
   bots: { difficulty: string; enabled: boolean },
-  onBotsChanged: () => void,
+  /** Tier changed: the health ceilings move, so the match has to start over. */
+  onDifficultyChanged: () => void,
+  /** Bots switched on or off. Rebuilds the roster and nothing else. */
+  onBotsToggled: () => void,
 ): DebugPanel {
   const pane = new Pane({ title: 'dead-pedal — M5' })
 
@@ -89,10 +92,21 @@ export function createDebugPanel(
   // purpose or by accident.
   const ai = pane.addFolder({ title: 'bots' })
   ai.addBinding(readouts, 'bots', { readonly: true, label: 'state' })
-  ai.addBinding(bots, 'enabled').on('change', onBotsChanged)
+  // Two handlers, not one, and the difference is load-bearing. Restarting the
+  // match on a *tier* change is right — the tier sets how much health everyone
+  // has, and changing that mid-match would be incoherent. Restarting when bots
+  // are merely switched off is not: the cars already on the field keep the
+  // health they were given, so there is nothing to rebuild.
+  //
+  // It also stopped being harmless. `refresh()` runs ten times a second and
+  // fires `change` for any value that moved, including one moved from code — so
+  // the dev probe's `setBots(false)` was silently restarting the match about
+  // 100ms later, which is a wonderful way to spend an afternoon debugging a
+  // test that measures a world it did not think it had thrown away.
+  ai.addBinding(bots, 'enabled').on('change', onBotsToggled)
   ai.addBinding(bots, 'difficulty', {
     options: Object.fromEntries(Object.keys(DIFFICULTIES).map((k) => [DIFFICULTIES[k]!.label, k])),
-  }).on('change', onBotsChanged)
+  }).on('change', onDifficultyChanged)
   combat.addBinding(readouts, 'rockets', { readonly: true, format: (v: number) => v.toFixed(0) })
   combat.addBinding(readouts, 'projectiles', {
     readonly: true,

@@ -25,7 +25,7 @@
  */
 import { TAU, clamp } from '../core/scalar'
 import { SPECIAL_IDS, WEAPONS, type WeaponId } from '../content/weapons'
-import { healthCss, liveryCss } from '../view/palette'
+import { healthCss, liveryCss, pickupCss } from '../view/palette'
 
 /** Mirrors `MatchPhase`, redeclared so the HUD owes the sim nothing. */
 export type HudPhase = 'countdown' | 'live' | 'roundOver' | 'matchOver'
@@ -50,6 +50,14 @@ export type HudOptions = {
   readonly arenaHalf: { readonly x: number; readonly z: number }
   /** Round length, so the clock can read 5:00 while the countdown is still running. */
   readonly roundSeconds: number
+  /**
+   * Start another match. Wired to the button on the result board.
+   *
+   * The keyboard R already does this, and the button is not a replacement for
+   * it — it is for the person who has just finished a match, has a hand on the
+   * mouse, and should not have to know a keybind to play again.
+   */
+  readonly onRestart: () => void
 }
 
 export type Hud = {
@@ -143,8 +151,12 @@ export function createHud(root: HTMLElement, options: HudOptions): Hud {
       <div class="hud-specials">
         <div class="hud-label">SPECIAL <b class="hud-key">L</b></div>
         ${SPECIAL_IDS.map(
+          // The pip carries the crate's colour, not the selection state. That
+          // is the whole point: the violet box on the far side of the arena is
+          // the homing missile, and you should be able to know that without
+          // driving through it first.
           (id) => `<div class="hud-special" data-special="${id}">
-            <i class="hud-pip"></i>
+            <i class="hud-pip" style="background:${pickupCss(id)}"></i>
             <span class="hud-special-name">${WEAPONS[id].label}</span>
             <span class="hud-special-ammo">0</span>
           </div>`,
@@ -165,6 +177,7 @@ export function createHud(root: HTMLElement, options: HudOptions): Hud {
     <div class="hud-board">
       <div class="hud-board-title"></div>
       <div class="hud-board-rows"></div>
+      <button class="hud-again" type="button">PLAY AGAIN <b>R</b></button>
     </div>
 
     <div class="hud-radar"><canvas></canvas></div>
@@ -188,6 +201,18 @@ export function createHud(root: HTMLElement, options: HudOptions): Hud {
   const board = pick('.hud-board')
   const boardTitle = pick('.hud-board-title')
   const boardBody = pick('.hud-board-rows')
+
+  // The only interactive element on the overlay. #hud is pointer-events: none so
+  // that a stray click always reaches the canvas; this one opts back in.
+  const again = pick<HTMLButtonElement>('.hud-again')
+  again.addEventListener('click', () => {
+    // Deliberately not behind the wall-clock guard that swallows R for a moment
+    // after the whistle. That guard exists so a trigger still held at the buzzer
+    // cannot skip the scoreboard, and a mouse travelling to a button is not
+    // something anyone does by accident.
+    again.blur()
+    options.onRestart()
+  })
 
   const specialRows = new Map<WeaponId, { readonly row: HTMLElement; readonly ammo: HTMLElement }>()
   for (const id of SPECIAL_IDS) {

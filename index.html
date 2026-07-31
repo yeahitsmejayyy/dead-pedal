@@ -96,9 +96,12 @@
         letter-spacing: 0.06em;
         font-variant-numeric: tabular-nums;
       }
-      .hud-pip { height: 7px; border-radius: 1px; background: transparent; }
+      /* The pip is the crate colour and is always lit — it is a legend, not a
+         cursor. Selection is carried by brightness and a rule instead, so the
+         two facts never compete for the same pixel. */
+      .hud-pip { height: 7px; border-radius: 1px; opacity: 0.5; }
       .hud-special.is-selected { color: #e8edf3; }
-      .hud-special.is-selected .hud-pip { background: #d8452f; }
+      .hud-special.is-selected .hud-pip { opacity: 1; }
       .hud-special.is-empty { color: #4a5461; }
       .hud-special.is-empty .hud-special-ammo { color: #ef4444; }
       /* The lock line reserves its row whether or not it has text. A block that grows
@@ -218,6 +221,23 @@
       .hud-board-row i { height: 8px; border-radius: 1px; opacity: 0.55; }
       .hud-board-row.is-top { color: #e8edf3; }
       .hud-board-row.is-top i { opacity: 1; }
+      .hud-again {
+        pointer-events: auto;
+        margin-top: 14px;
+        justify-self: center;
+        padding: 8px 18px;
+        font: inherit;
+        letter-spacing: 0.14em;
+        color: #d8dee6;
+        background: #11151b;
+        border: 1px solid #2b3440;
+        border-radius: 3px;
+        cursor: pointer;
+      }
+      .hud-again b { color: #8b95a3; font-weight: 600; margin-left: 6px; }
+      .hud-again:hover { border-color: #4ade80; color: #e8edf3; }
+      .hud-again:active { transform: translateY(1px); }
+      .hud-again:focus-visible { outline: 1px solid #4ade80; outline-offset: 2px; }
 
       /* ── radar ───────────────────────────────────────────────────────── */
       /* Bottom-left, clear of the debug panel's whole right-hand column. */
