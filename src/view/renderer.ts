@@ -192,32 +192,47 @@ export class Renderer {
     grid.position.y = arena.groundY + 0.02
     this.scene.add(grid)
 
-    const wallGeometry = new BoxGeometry(1, arena.wallHeight, hz * 2)
+    // The arena's static geometry is merged per material rather than added
+    // mesh by mesh. Fifteen boxes that never move and never change colour were
+    // fifteen draw calls, doubled again for the ones that cast — and PLAN.md §6
+    // budgets 100 for the whole frame, which the game was already exceeding at
+    // 104 in ordinary play. Merging is worth 21 of those and changes nothing
+    // you can see: same geometry, same material, same shadows.
+    const wallParts: BufferGeometry[] = []
     for (const sx of [-1, 1]) {
-      const wall = new Mesh(wallGeometry, WALL)
-      wall.position.set(sx * hx, arena.groundY + arena.wallHeight / 2, 0)
-      wall.receiveShadow = true
-      this.scene.add(wall)
+      const side = new BoxGeometry(1, arena.wallHeight, hz * 2)
+      side.translate(sx * hx, arena.groundY + arena.wallHeight / 2, 0)
+      wallParts.push(side)
     }
-
-    const endGeometry = new BoxGeometry(hx * 2, arena.wallHeight, 1)
     for (const sz of [-1, 1]) {
-      const wall = new Mesh(endGeometry, WALL)
-      wall.position.set(0, arena.groundY + arena.wallHeight / 2, sz * hz)
-      wall.receiveShadow = true
-      this.scene.add(wall)
+      const end = new BoxGeometry(hx * 2, arena.wallHeight, 1)
+      end.translate(0, arena.groundY + arena.wallHeight / 2, sz * hz)
+      wallParts.push(end)
+    }
+    const walls = mergeGeometries(wallParts, false)
+    if (walls !== null) {
+      const mesh = new Mesh(walls, WALL)
+      mesh.receiveShadow = true
+      this.scene.add(mesh)
     }
 
     // ── blocks and ramps, built from the collision data itself ───────────────
     // Not "kept in sync with" — built from. There is no second source that
     // could drift, which is the whole reason the arena is data and not a mesh.
+    const blockParts: BufferGeometry[] = []
     for (const block of arena.blocks) {
-      const mesh = new Mesh(
-        new BoxGeometry(block.halfExtents.x * 2, block.halfExtents.y * 2, block.halfExtents.z * 2),
-        BLOCK,
+      const box = new BoxGeometry(
+        block.halfExtents.x * 2,
+        block.halfExtents.y * 2,
+        block.halfExtents.z * 2,
       )
-      mesh.position.set(block.pos.x, block.pos.y + block.halfExtents.y, block.pos.z)
-      mesh.rotation.y = -block.yaw
+      box.rotateY(-block.yaw)
+      box.translate(block.pos.x, block.pos.y + block.halfExtents.y, block.pos.z)
+      blockParts.push(box)
+    }
+    const blocks = mergeGeometries(blockParts, false)
+    if (blocks !== null) {
+      const mesh = new Mesh(blocks, BLOCK)
       mesh.castShadow = true
       mesh.receiveShadow = true
       this.scene.add(mesh)
@@ -226,13 +241,16 @@ export class Renderer {
     // Every ramp's chevrons, merged into one mesh: one draw call for the lot.
     const chevronParts: BufferGeometry[] = []
 
+    const rampParts: BufferGeometry[] = []
+
     for (const ramp of arena.ramps) {
-      const mesh = new Mesh(wedgeGeometry(ramp), RAMP)
-      mesh.position.set(ramp.pos.x, ramp.pos.y, ramp.pos.z)
-      mesh.rotation.y = -ramp.yaw
-      mesh.castShadow = true
-      mesh.receiveShadow = true
-      this.scene.add(mesh)
+      // Baked into world space and merged with the others rather than placed as
+      // its own mesh, for the same reason as the walls and blocks above. Three
+      // ramps that never move were six draw calls with the shadow pass.
+      const wedge = wedgeGeometry(ramp)
+      wedge.rotateY(-ramp.yaw)
+      wedge.translate(ramp.pos.x, ramp.pos.y, ramp.pos.z)
+      rampParts.push(wedge)
 
       // Arrows up the boost incline. This side used to be a wall you hit by
       // accident; it is a ramp you should want to aim for, and nothing about a
@@ -270,6 +288,14 @@ export class Renderer {
         chevron.translate(ramp.pos.x, ramp.pos.y, ramp.pos.z)
         chevronParts.push(chevron)
       }
+    }
+
+    const ramps = mergeGeometries(rampParts, false)
+    if (ramps !== null) {
+      const mesh = new Mesh(ramps, RAMP)
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+      this.scene.add(mesh)
     }
 
     if (chevronParts.length > 0) {

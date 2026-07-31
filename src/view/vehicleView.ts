@@ -65,7 +65,8 @@ export class VehicleView {
 
     const cabin = new Mesh(new BoxGeometry(hw * 1.6, hh * 0.9, hl * 0.95), CABIN)
     cabin.position.set(0, hh * 0.95, -hl * 0.1)
-    cabin.castShadow = true
+    // No shadow. A cabin's shadow lands inside the chassis's own, so it is four
+    // draw calls a frame (one per car) spent on something nobody can see.
     this.body.add(cabin)
 
     // A nose stripe, so which end is the front is never in doubt.
@@ -112,7 +113,10 @@ export class VehicleView {
       for (const sz of [-1, 1]) {
         const wheel = new Mesh(wheelGeometry, RUBBER)
         wheel.position.set(sx * hw, wheelY, sz * hl * 0.68)
-        wheel.castShadow = true
+        // No shadow either, and this one is the expensive case: sixteen wheels
+        // across four cars is sixteen extra shadow draws, measured at -16 calls.
+        // A wheel at speed under a 1024px map spanning 120m is about eight
+        // pixels of shadow, entirely inside the chassis's.
         this.body.add(wheel)
         this.wheels.push(wheel)
       }

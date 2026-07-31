@@ -669,8 +669,49 @@ test.describe('M1–M5 — driving, contact, weapons, lock-on and bots', () => {
     expect((await match()).boardShown, 'the result card outlived its match').toBe(false)
   })
 
-  test('stays inside the draw-call budget', async ({ page }) => {
-    // PLAN.md §6: under 100 draw calls.
-    expect((await probe(page)).drawCalls).toBeLessThan(100)
+  test('stays inside the draw-call budget, at its worst frame', async ({ page }) => {
+    // PLAN.md §6: under 100 draw calls. The assertion this replaces took ONE
+    // sample while standing still and read 94 against a limit of 100 — six
+    // calls of headroom, reported as clear. Free play was reaching 104-106,
+    // with 2.7% of frames over budget, and the test never saw a single one of
+    // them. A budget you only measure at rest is not a budget.
+    //
+    // So: sample every rendered frame through an actual fight and assert the
+    // PEAK. `renderer.info.render.calls` includes the shadow pass, which was
+    // itself a third of the frame and the reason the old number looked fine.
+    await page.evaluate(() => {
+      type Probe = { __deadPedal: { drawCalls: () => number }; __peak: number; __frames: number }
+      const w = window as unknown as Probe
+      w.__peak = 0
+      w.__frames = 0
+      const sample = (): void => {
+        const calls = w.__deadPedal.drawCalls()
+        if (calls > w.__peak) w.__peak = calls
+        w.__frames++
+        requestAnimationFrame(sample)
+      }
+      requestAnimationFrame(sample)
+    })
+
+    // Everything on screen at once: driving, firing, and sweeping the camera so
+    // the whole arena passes through the frustum.
+    await page.keyboard.down('w')
+    await page.keyboard.down('j')
+    for (const key of ['d', 'a', 'd']) {
+      await page.keyboard.down(key)
+      await page.waitForTimeout(2500)
+      await page.keyboard.up(key)
+    }
+    await page.keyboard.up('j')
+    await page.keyboard.up('w')
+
+    const { peak, frames } = await page.evaluate(() => {
+      const w = window as unknown as { __peak: number; __frames: number }
+      return { peak: w.__peak, frames: w.__frames }
+    })
+
+    // Guard against the whole thing passing because nothing rendered.
+    expect(frames, 'no frames were sampled').toBeGreaterThan(120)
+    expect(peak, `peak was ${peak} draw calls over ${frames} frames`).toBeLessThan(100)
   })
 })

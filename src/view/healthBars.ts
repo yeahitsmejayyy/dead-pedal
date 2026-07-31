@@ -74,6 +74,12 @@ export class HealthBars {
     )
 
     for (const mesh of [this.backing, this.fill]) {
+      // A transparent DoubleSide material makes three.js draw the mesh twice —
+      // back faces then front — so these two bars were costing four draw calls
+      // rather than two. The bars are billboarded at the camera every frame, so
+      // the back face is never the one you see and the second pass buys nothing.
+      // Measured: 2 calls each becomes 1.
+      ;(mesh.material as MeshBasicMaterial).forceSinglePass = true
       // The bars move every frame and are always near the camera.
       mesh.frustumCulled = false
       mesh.renderOrder = 10
