@@ -1,0 +1,16 @@
+{
+  /* Contract 1, at the type level.
+   *
+   * L0 and L1 are compiled with no DOM and no Node types at all, so `document`,
+   * `window`, `performance` and `process` are not merely discouraged — they do
+   * not exist. ESLint catches the same violations with better messages; this
+   * catches the ones a clever author routes around.
+   *
+   * Run by `npm run typecheck` as a second pass over the same sources. */
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": []
+  },
+  "include": ["src/core", "src/sim"]
+}

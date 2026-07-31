@@ -1,0 +1,15 @@
+{
+  "note": "Regenerate with `npm run record` only when a change to the car is intended.",
+  "seed": 1,
+  "seconds": 30,
+  "ticks": 1800,
+  "hash": "b5b58bc413a0914e",
+  "final": {
+    "x": -87.69517422182078,
+    "y": 0.55,
+    "z": 19.7429763798958,
+    "yaw": 1.9883927991607884,
+    "forwardSpeed": -0.040368918192018995,
+    "lateralSpeed": 0.14007826772471485
+  }
+}

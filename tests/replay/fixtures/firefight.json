@@ -1,0 +1,21 @@
+{
+  "note": "Regenerate with `npm run record` only when a change to the weapons is intended.",
+  "seed": 1,
+  "seconds": 15.799999999999999,
+  "ticks": 948,
+  "hash": "f3ee8deb51532709",
+  "destroyedAtTick": 410,
+  "targetHealth": 100.69999999999987,
+  "shooterAmmo": {
+    "machineGun": 478,
+    "rocket": 2,
+    "homingMissile": 2,
+    "mine": 2
+  },
+  "weaponsUsed": [
+    "homingMissile",
+    "machineGun",
+    "mine",
+    "rocket"
+  ]
+}
