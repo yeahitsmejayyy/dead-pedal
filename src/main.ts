@@ -115,8 +115,26 @@ const audio = createAudio({ silent: new URLSearchParams(location.search).has('si
 for (const kind of ['keydown', 'pointerdown'] as const) {
   window.addEventListener(kind, () => audio.arm(), { passive: true })
 }
+/**
+ * Paused, by the player.
+ *
+ * Distinct from the match's own frozen phases: a countdown still ticks and a
+ * scoreboard still counts down its guard, whereas this stops the world dead.
+ * Implemented by simply not stepping — the accumulator is never fed, so no
+ * ticks are banked and nothing catches up in a rush on resume.
+ */
+let paused = false
+
 window.addEventListener('keydown', (event) => {
+  if (event.code === 'KeyP') {
+    paused = !paused
+    audio.setPaused(paused)
+    hud.setPaused(paused)
+  }
   if (event.code === 'KeyM') audio.toggleMute()
+  // E swaps the recorded engine loops for the oscillator bank. Both keep
+  // running, so the switch lands at the revs you were already at.
+  if (event.code === 'KeyE') audio.toggleEngine()
 })
 // rAF stops when the tab is backgrounded, so `update` stops with it and the
 // engine would otherwise drone on at whatever revs the last frame left.
@@ -249,7 +267,12 @@ function frame(now: number): void {
     if (!guarded) reset()
   }
 
-  const { clock: nextClock, steps } = advance(clock, elapsed)
+  // Everything below this line is skipped while paused: no ticks, no match
+  // clock, no bots, no projectiles. The scene still renders, so you are looking
+  // at a held frame rather than a black screen.
+  const { clock: nextClock, steps } = paused
+    ? { clock, steps: 0 }
+    : advance(clock, elapsed)
   clock = nextClock
 
   // ── fixed-step sim ─────────────────────────────────────────────────────────
@@ -277,6 +300,11 @@ function frame(now: number): void {
     if (heard !== undefined) {
       audio.consume(current.events, { x: heard.pos.x, z: heard.pos.z, yaw: heard.yaw }, PLAYER)
     }
+    // The two sounds that are a state rather than an event.
+    audio.tick(
+      current.match.phase === 'countdown' ? current.match.timer * TICK_DT : null,
+      current.projectiles.filter((p) => p.weapon === 'mine').length,
+    )
 
     // Only what happens to the player shakes the player's camera.
     const player = current.vehicles[PLAYER]
@@ -366,7 +394,22 @@ function frame(now: number): void {
       maxSpeed: vehicleTuning.maxSpeed,
       throttle: throttleAxis,
       grounded: driver?.grounded ?? true,
-      alive: driver !== undefined && driver.health > 0 && acceptsInput(current.match),
+      alive:
+        !paused && driver !== undefined && driver.health > 0 && acceptsInput(current.match),
+      // 0 where the tyres start to let go, 1 at a full handbrake slide. The
+      // floor is the same 0.7x slipSaturation the tyre smoke uses, so what you
+      // hear and what you see agree; the ceiling is the 2.4x a handbrake turn
+      // was measured reaching.
+      slip:
+        driver === undefined
+          ? 0
+          : Math.max(
+              0,
+              Math.min(
+                1,
+                (Math.abs(driver.lateralSpeed) / vehicleTuning.slipSaturation - 0.7) / 1.7,
+              ),
+            ),
     },
     elapsed,
   )

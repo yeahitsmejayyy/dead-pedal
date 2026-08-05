@@ -21,6 +21,7 @@ import { clamp } from '../core/scalar'
 import { rightOf, type SimEvent } from '../sim'
 import { DEFAULT_ENGINE, DEFAULT_MIX, type MixTuning } from '../content/audio'
 import { EngineVoice, type EngineDrive } from './engine'
+import { SampledEngine } from './sampled'
 
 export type Ears = { readonly x: number; readonly z: number; readonly yaw: number }
 
@@ -28,9 +29,18 @@ export type Audio = {
   arm(): void
   armed(): boolean
   muted(): boolean
+  /** Silence everything while the game is paused. Independent of mute. */
+  setPaused(paused: boolean): void
   toggleMute(): boolean
   consume(events: readonly SimEvent[], ears: Ears, playerId: number): void
+  /**
+   * Per-tick clock, for the two sounds no single event covers: the 3-2-1
+   * countdown pips and the pulse of a live mine.
+   */
+  tick(countdownSecondsLeft: number | null, liveMines: number): void
   update(drive: EngineDrive, dt: number): void
+  /** Swap between the sampled loops and the oscillator bank. Returns true if sampled. */
+  toggleEngine(): boolean
   state(): { engine: string; voices: number; loaded: string }
 }
 
@@ -46,7 +56,13 @@ type SoundId =
   | 'mineBeep'
   | 'pickup'
   | 'lockOn'
+  | 'lockLost'
   | 'countdownBeep'
+  | 'countdownGo'
+  | 'matchEnd'
+  | 'respawn'
+  | 'land'
+  | 'damage'
 
 /** Which bus a sound belongs to. The buses are the mix. */
 type Bus = 'weapons' | 'impacts' | 'ui'
@@ -74,7 +90,7 @@ const SOUNDS: Readonly<Record<SoundId, Spec>> = {
   // correlation 0.80-0.88. Only 0.0-0.4% of each shot's energy runs past 62.5ms,
   // which is why sixteen a second rattles instead of smearing into a drone.
   gunFire: {
-    files: ['machinegun_fire_a', 'machinegun_fire_b', 'machinegun_fire_c', 'machinegun_fire_d', 'machinegun_fire_e'],
+    files: ['gun-1'],
     bus: 'weapons',
     level: 0.85,
     priority: 1,
@@ -83,21 +99,27 @@ const SOUNDS: Readonly<Record<SoundId, Spec>> = {
   // below 0.16 — genuinely distinct — with spectral centroids of 2.4-5.2 kHz,
   // which is exactly the band that cuts through an engine rather than under it.
   bulletMetal: {
-    files: ['bullet_impact_metal_a', 'bullet_impact_metal_b', 'bullet_impact_metal_c', 'bullet_impact_metal_d', 'bullet_impact_metal_e'],
+    files: ['hit-1'],
     bus: 'impacts',
     level: 0.7,
     priority: 2,
   },
-  rocketLaunch: { files: ['rocket_launch_a', 'rocket_launch_b'], bus: 'weapons', level: 1, priority: 4 },
-  explosionNear: { files: ['explosion_near_a', 'explosion_near_b'], bus: 'weapons', level: 1, priority: 5 },
-  explosionFar: { files: ['explosion_far_a', 'explosion_far_b'], bus: 'weapons', level: 0.75, priority: 3 },
-  carImpact: { files: ['car_impact_a', 'car_impact_b', 'car_impact_c', 'car_impact_d'], bus: 'impacts', level: 0.9, priority: 3 },
-  wreck: { files: ['vehicle_wreck_a', 'vehicle_wreck_b'], bus: 'weapons', level: 1, priority: 5 },
-  mineArm: { files: ['mineArm'], bus: 'ui', level: 0.8, priority: 2 },
-  mineBeep: { files: ['mineBeep'], bus: 'ui', level: 0.45, priority: 1 },
+  rocketLaunch: { files: ['rkt-1'], bus: 'weapons', level: 1, priority: 4 },
+  explosionNear: { files: ['boom-1'], bus: 'weapons', level: 1, priority: 5 },
+  explosionFar: { files: ['boomfar-1'], bus: 'weapons', level: 0.75, priority: 3 },
+  carImpact: { files: ['crash-1'], bus: 'impacts', level: 0.9, priority: 3 },
+  wreck: { files: ['wreck-1'], bus: 'weapons', level: 1, priority: 5 },
+  mineArm: { files: ['mine-arm'], bus: 'ui', level: 0.8, priority: 2 },
+  mineBeep: { files: ['mine-tick'], bus: 'ui', level: 0.45, priority: 1 },
   pickup: { files: ['pickup'], bus: 'ui', level: 0.8, priority: 2 },
-  lockOn: { files: ['lockOn'], bus: 'ui', level: 0.5, priority: 2 },
-  countdownBeep: { files: ['countdownBeep'], bus: 'ui', level: 0.9, priority: 6 },
+  lockOn: { files: ['lock-on'], bus: 'ui', level: 0.5, priority: 2 },
+  countdownBeep: { files: ['beep'], bus: 'ui', level: 0.55, priority: 6 },
+  lockLost: { files: ['lock-off'], bus: 'ui', level: 0.5, priority: 2 },
+  countdownGo: { files: ['go'], bus: 'ui', level: 0.6, priority: 6 },
+  matchEnd: { files: ['horn'], bus: 'ui', level: 0.8, priority: 6 },
+  respawn: { files: ['respawn'], bus: 'ui', level: 0.7, priority: 3 },
+  land: { files: ['land-1'], bus: 'impacts', level: 0.8, priority: 2 },
+  damage: { files: ['dmg-1'], bus: 'impacts', level: 0.65, priority: 3 },
 }
 
 type Voice = {
@@ -118,9 +140,12 @@ const SILENT: Audio = Object.freeze({
   arm: () => {},
   armed: () => false,
   muted: () => true,
+  setPaused: () => {},
   toggleMute: () => true,
   consume: () => {},
+  tick: () => {},
   update: () => {},
+  toggleEngine: () => false,
   state: () => ({ engine: 'silent', voices: 0, loaded: 'silent' }),
 })
 
@@ -162,6 +187,29 @@ export function createAudio(options: AudioOptions = {}): Audio {
 
   const engine = new EngineVoice(ctx, DEFAULT_ENGINE, buses.engine)
 
+  /**
+   * Tyre slide, as a loop rather than a one-shot.
+   *
+   * Measured on the real car: a handbrake slide at 147 km/h runs 3.70s with the
+   * throttle on and 1.05s out of a hard grip turn, and the player decides which.
+   * A fixed-length screech would cut off mid-slide or squeal after the car had
+   * straightened up, so the loop runs forever and only its gain moves.
+   *
+   * Built lazily, once the buffer has decoded.
+   */
+  let skid: { source: AudioBufferSourceNode; gain: GainNode } | null = null
+
+  function buildSkid(): void {
+    const buffer = buffers.get('skid')
+    if (buffer === undefined || skid !== null) return
+    const gain = new GainNode(ctx, { gain: 0 })
+    const source = new AudioBufferSourceNode(ctx, { buffer, loop: true })
+    source.connect(gain)
+    gain.connect(buses.impacts)
+    source.start()
+    skid = { source, gain }
+  }
+
   const voices: Voice[] = []
   for (let i = 0; i < mix.voices; i++) {
     const gain = new GainNode(ctx, { gain: 0 })
@@ -176,7 +224,17 @@ export function createAudio(options: AudioOptions = {}): Audio {
   const lastStarted = new Map<SoundId, number>()
   let isArmed = false
   let isMuted = false
+  let isPaused = false
   let loadState = 'loading'
+  let lastPip = -1
+  let lastMineTick = 0
+  let sampled: SampledEngine | null = null
+  /** Which engine you are hearing. Toggled with E so the two can be compared. */
+  let useSampled = true
+
+  function applyEngineChoice(): void {
+    sampled?.setActive(useSampled)
+  }
 
   /**
    * Fetch and decode every sample, without blocking the game.
@@ -186,19 +244,33 @@ export function createAudio(options: AudioOptions = {}): Audio {
    * gunshot in the first second is better than a loading screen for 300KB.
    */
   void (async (): Promise<void> => {
-    const names = [...new Set(Object.values(SOUNDS).flatMap((s) => s.files))]
+    const oneShots = [...new Set(Object.values(SOUNDS).flatMap((s) => s.files))]
+    // Loops ship as Opus. Vorbis re-encoding was measured destroying the seam —
+    // wrap discontinuity 0.00415 -> 0.45452, a click on every single cycle.
+    const loops = ['eng-idle', 'eng-low', 'eng-high', 'skid']
+    const names = [
+      ...oneShots.map((n) => [n, 'ogg'] as const),
+      ...loops.map((n) => [n, 'opus'] as const),
+    ]
     const results = await Promise.allSettled(
-      names.map(async (name) => {
-        const response = await fetch(`audio/${name}.ogg`)
+      names.map(async ([name, ext]) => {
+        const response = await fetch(`audio/${name}.${ext}`)
         if (!response.ok) throw new Error(`${name}: ${response.status}`)
         buffers.set(name, await ctx.decodeAudioData(await response.arrayBuffer()))
       }),
     )
     const failed = results.filter((r) => r.status === 'rejected').length
     loadState = failed === 0 ? `${names.length} loaded` : `${names.length - failed}/${names.length}`
+
+    // The sampled engine can only be built once its loops exist, so it is made
+    // here rather than in the constructor. Until then the synth carries it.
+    buildSkid()
+    sampled = new SampledEngine(ctx, DEFAULT_ENGINE, buses.engine, buffers)
+    if (!sampled.ready) sampled = null
+    applyEngineChoice()
   })()
 
-  const level = (): number => (isArmed && !isMuted ? mix.master : 0)
+  const level = (): number => (isArmed && !isMuted && !isPaused ? mix.master : 0)
 
   /** Duck the engine briefly so a launch or a blast cuts through it. */
   function duck(depth: number): void {
@@ -246,7 +318,7 @@ export function createAudio(options: AudioOptions = {}): Audio {
 
     // Pitch scatter on top of variants. Five files cycled at sixteen rounds a
     // second still lands on the same file three times a second.
-    const rate = 0.93 + Math.random() * 0.14
+    const rate = 0.88 + Math.random() * 0.24
     const source = new AudioBufferSourceNode(ctx, { buffer, playbackRate: rate })
     source.connect(slot.gain)
     slot.gain.gain.setValueAtTime(gain * spec.level, now)
@@ -288,6 +360,11 @@ export function createAudio(options: AudioOptions = {}): Audio {
       void ctx.resume().catch(() => undefined)
       master.gain.setTargetAtTime(level(), ctx.currentTime, 0.05)
     },
+    setPaused(next: boolean): void {
+      isPaused = next
+      master.gain.setTargetAtTime(level(), ctx.currentTime, 0.08)
+    },
+
     armed: () => isArmed && ctx.state === 'running',
     muted: () => isMuted,
     toggleMute(): boolean {
@@ -346,7 +423,36 @@ export function createAudio(options: AudioOptions = {}): Audio {
             break
 
           case 'roundStarted':
-            play('countdownBeep', 1, 0)
+            // The round going live is the GO, not a tick. The 3-2-1 pips are
+            // driven from the countdown clock in `tick` below, because the sim
+            // raises no event per second.
+            play('countdownGo', 1, 0)
+            break
+
+          case 'lockAcquired':
+            if (event.id === playerId) play('lockOn', 1, 0)
+            break
+
+          case 'lockLost':
+            if (event.id === playerId) play('lockLost', 1, 0)
+            break
+
+          case 'landed':
+            placed('land', event.pos, ears, clamp(event.magnitude / 12, 0.3, 1))
+            break
+
+          case 'damaged':
+            // Only heavy hits. A machine-gun round already makes its own noise
+            // at the point of impact; doubling it up on every bullet is mush.
+            if (event.amount > 12) placed('damage', event.pos, ears, clamp(event.amount / 40, 0.4, 1))
+            break
+
+          case 'matchEnded':
+            play('matchEnd', 1, 0)
+            break
+
+          case 'vehicleRespawned':
+            if (event.id === playerId) play('respawn', 1, 0)
             break
 
           default:
@@ -355,12 +461,63 @@ export function createAudio(options: AudioOptions = {}): Audio {
       }
     },
 
+    tick(countdownSecondsLeft, liveMines): void {
+      if (!isArmed || isMuted) return
+      const now = ctx.currentTime
+
+      // One pip per whole second of countdown. The sim raises `roundStarted`
+      // when the round goes live and nothing at all on the way there, so the
+      // ticks come off the clock rather than off an event.
+      if (countdownSecondsLeft !== null) {
+        const second = Math.ceil(countdownSecondsLeft)
+        if (second !== lastPip && second > 0) {
+          lastPip = second
+          play('countdownBeep', 1, 0)
+        }
+      } else {
+        lastPip = -1
+      }
+
+      // A live mine ticks. Slow enough to be a warning rather than a nuisance,
+      // and one pulse for the field however many are down — a minefield should
+      // not sound like a smoke alarm.
+      if (liveMines > 0 && now - lastMineTick > 1.1) {
+        lastMineTick = now
+        play('mineBeep', 0.7, 0)
+      }
+    },
+
     update(drive, dt): void {
-      engine.update(isArmed && !isMuted ? drive : { ...drive, alive: false }, dt)
+      const live = isArmed && !isMuted ? drive : { ...drive, alive: false }
+      // Both run; only one is audible. Keeping the silent one stepping means
+      // switching is instant and lands at the revs you were already at, rather
+      // than spinning up from idle mid-corner.
+      engine.update(useSampled && sampled !== null ? { ...live, alive: false } : live, dt)
+      sampled?.update(live, dt)
+
+      if (skid !== null) {
+        const now = ctx.currentTime
+        // Squared, so a car merely leaning on its tyres stays quiet and only a
+        // genuine slide gets loud. Fades out slower than in: rubber stops
+        // screeching the instant it grips, but cutting it dead sounds like a
+        // dropped sample.
+        const want = live.alive && live.grounded ? live.slip * live.slip : 0
+        skid.gain.gain.setTargetAtTime(want * 0.9, now, want > 0.05 ? 0.05 : 0.12)
+        // A little pitch with speed, so a slide at 40 m/s is not the same note
+        // as one at 12.
+        const rate = clamp(0.85 + (Math.abs(live.speed) / live.maxSpeed) * 0.4, 0.85, 1.25)
+        skid.source.playbackRate.setTargetAtTime(rate, now, 0.08)
+      }
+    },
+
+    toggleEngine(): boolean {
+      useSampled = !useSampled
+      applyEngineChoice()
+      return useSampled
     },
 
     state: () => ({
-      engine: `${Math.round(engine.revs())} rpm  g${engine.currentGear()}`,
+      engine: `${useSampled && sampled !== null ? 'sampled' : 'synth'} ${Math.round((useSampled && sampled !== null ? sampled : engine).revs())} rpm  g${(useSampled && sampled !== null ? sampled : engine).currentGear()}`,
       voices: voices.filter((v) => v.until > ctx.currentTime).length,
       loaded: loadState,
     }),

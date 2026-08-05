@@ -239,6 +239,31 @@
       .hud-again:active { transform: translateY(1px); }
       .hud-again:focus-visible { outline: 1px solid #4ade80; outline-offset: 2px; }
 
+      /* Paused. Deliberately not a full-screen scrim — you should still be able
+         to see the frame you stopped on. */
+      .hud-paused {
+        display: none;
+        position: fixed;
+        inset: 0;
+        place-content: center;
+        justify-items: center;
+        text-align: center;
+        background: rgba(7, 9, 12, 0.45);
+      }
+      .hud-paused.is-shown { display: grid; }
+      .hud-paused-word {
+        font-size: 44px;
+        font-weight: 700;
+        letter-spacing: 0.22em;
+        color: #e8edf3;
+        text-indent: 0.22em;
+      }
+      .hud-paused-hint { margin-top: 10px; font-size: 12px; color: #8b95a3; }
+      .hud-paused-hint b { color: #d8dee6; }
+      #hud.is-paused .hud-stack,
+      #hud.is-paused .hud-round,
+      #hud.is-paused .hud-radar { opacity: 0.35; transition: opacity 140ms linear; }
+
       /* ── radar ───────────────────────────────────────────────────────── */
       /* Bottom-left, clear of the debug panel's whole right-hand column. */
       .hud-radar { position: fixed; left: 16px; bottom: 16px; line-height: 0; }
@@ -254,7 +279,7 @@
     <div id="hud"></div>
     <div id="keys">
       <div><b>W&nbsp;S</b> throttle / brake &nbsp;·&nbsp; <b>A&nbsp;D</b> steer</div>
-      <div><b>Space</b> handbrake &nbsp;·&nbsp; <b>C</b> look back &nbsp;·&nbsp; <b>R</b> reset &nbsp;·&nbsp; <b>M</b> mute</div>
+      <div><b>Space</b> handbrake &nbsp;·&nbsp; <b>C</b> look back &nbsp;·&nbsp; <b>R</b> reset &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>P</b> pause &nbsp;·&nbsp; <b>E</b> engine</div>
       <div><b>J</b> / left&nbsp;click machine gun &nbsp;·&nbsp; <b>K</b> / right&nbsp;click special &nbsp;·&nbsp; <b>L</b> cycle special</div>
       <div><b>T</b> next target &nbsp;<i>(homing missile only)</i></div>
       <div>gamepad: triggers, left stick, <b>A</b> handbrake, <b>X</b> gun, <b>Y</b> special, <b>RB</b> cycle, <b>LB</b> target</div>

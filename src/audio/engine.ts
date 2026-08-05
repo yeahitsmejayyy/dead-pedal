@@ -19,6 +19,12 @@ export type EngineDrive = {
   readonly grounded: boolean
   /** A wreck makes no noise. */
   readonly alive: boolean
+  /**
+   * How hard the tyres are sliding: 0 at the point they start to let go, 1 at a
+   * full handbrake slide. Normalised here rather than in the audio layer because
+   * the threshold is a property of the car's tuning, not of the sound.
+   */
+  readonly slip: number
 }
 
 /**

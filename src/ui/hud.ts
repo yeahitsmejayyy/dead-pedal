@@ -73,6 +73,8 @@ export type Hud = {
    * phase being reported — `matchWinner` in `matchOver`, `roundWinner` in
    * `roundOver` — and `null` there means a **draw**, not "not decided yet".
    */
+  /** Show or hide the paused overlay. */
+  setPaused(paused: boolean): void
   setRound(
     phase: HudPhase,
     secondsLeft: number,
@@ -181,6 +183,11 @@ export function createHud(root: HTMLElement, options: HudOptions): Hud {
     </div>
 
     <div class="hud-radar"><canvas></canvas></div>
+
+    <div class="hud-paused">
+      <div class="hud-paused-word">PAUSED</div>
+      <div class="hud-paused-hint"><b>P</b> to resume</div>
+    </div>
   `
 
   const pick = <T extends HTMLElement>(selector: string): T => {
@@ -204,6 +211,7 @@ export function createHud(root: HTMLElement, options: HudOptions): Hud {
 
   // The only interactive element on the overlay. #hud is pointer-events: none so
   // that a stray click always reaches the canvas; this one opts back in.
+  const pausedCard = pick('.hud-paused')
   const again = pick<HTMLButtonElement>('.hud-again')
   again.addEventListener('click', () => {
     // Deliberately not behind the wall-clock guard that swallows R for a moment
@@ -634,6 +642,12 @@ export function createHud(root: HTMLElement, options: HudOptions): Hud {
       // is also entirely off the draw-call budget: nothing here goes near the
       // WebGL context.
       drawRadar()
+    },
+
+    setPaused(paused) {
+      pausedCard.classList.toggle('is-shown', paused)
+      // Dim the rest of the readout so the overlay is unmistakably the subject.
+      root.classList.toggle('is-paused', paused)
     },
 
     setRound(phase, secondsLeft, scores, winner) {
