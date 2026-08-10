@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dead-pedal",
+      "//": "PORT rather than --port: vite.config.ts reads the env var to pick a per-port cacheDir, and 5173 is taken by the sprout-os site.",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "PORT=5180 npm run dev"],
+      "port": 5180
+    }
+  ]
+}
