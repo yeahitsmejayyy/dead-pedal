@@ -18,6 +18,15 @@ export type Task = {
   readonly done: boolean
   /** Shown under the task. For why something is not done, or what it cost. */
   readonly note?: string
+  /**
+   * Known, decided, and deliberately not being done yet.
+   *
+   * Distinct from "not done". A deferred task is still visible and still counts
+   * against the total, but it does not drive "up next" — otherwise the tracker
+   * points at work that was parked on purpose and the ordering stops meaning
+   * anything.
+   */
+  readonly deferred?: boolean
 }
 
 export type Milestone = {
@@ -111,9 +120,9 @@ export const MILESTONES: readonly Milestone[] = [
       { id: 'm5-bars', label: 'Health bars over cars and a player HUD bar', done: true },
       {
         id: 'm5-baseform',
-        label: 'Retune Base Form so it actually engages',
-        done: false,
-        note: '2.9 kills a match over 20 seeds, 11 of 20 drawn. A tier problem, not a clock problem.',
+        label: 'Base Form engages without being a threat',
+        done: true,
+        note: 'Against a moving player it gets you in 8/12 matches, 1.3 deaths each — a light spar, as specified. The earlier "barely engages" reading came from bot-vs-bot with no player in the arena, which nobody plays.',
       },
     ],
   },
@@ -133,12 +142,14 @@ export const MILESTONES: readonly Milestone[] = [
         id: 'm6-rounds',
         label: 'Decide a round on that round’s kills, not the match’s',
         done: false,
+        deferred: true,
         note: 'Unreachable in a one-round mode. Left as a todo for whoever builds mode two.',
       },
       {
         id: 'm6-roundone',
         label: 'Announce round one in a zero-countdown world',
         done: false,
+        deferred: true,
         note: 'Inert today: nothing consumes roundStarted in sandbox.',
       },
     ],
@@ -175,16 +186,38 @@ export const MILESTONES: readonly Milestone[] = [
         note: 'A slide runs 1.05-3.70s under player control, so a one-shot could not work.',
       },
       { id: 'm7-pause', label: 'Pause on P — freezes sim, match clock and audio', done: true },
+
+      // Remaining work, in the order it should be picked up.
+      {
+        id: 'm7-perf',
+        label: 'CI perf assertion: 8 vehicles under 2ms',
+        done: true,
+        note: '60us median against a 2ms budget. The bound that actually catches a regression is the 4→8 scaling ratio, calibrated against an injected O(n²): clean 2.0x, regression 3.9x, bounded at 3.0.',
+      },
+      {
+        id: 'm7-visual',
+        label: 'Playwright visual regression on a fixed camera and seeded state',
+        done: true,
+        note: 'Clock pinned frame-by-frame, canvas only. Catches a maxSpeed change at 9261 pixels; not sensitive to sub-degree camera tweaks.',
+      },
       {
         id: 'm7-sfx-variants',
-        label: 'More gun and bullet-impact variants',
-        done: false,
-        note: 'One take each today. At 16 rounds/s a single file phase-locks; pitch scatter only half-hides it.',
+        label: 'Five variants each for the gun and bullet impacts',
+        done: true,
+        note: 'Loudness-matched to a 0.0 dB spread — the raw takes spanned 17.5 dB, and variants at different levels rotate as a volume wobble. Most-similar pair correlates 0.11, so they are genuinely different rounds.',
       },
-      { id: 'm7-music', label: 'Music', done: false },
-      { id: 'm7-art', label: 'Art pass: vehicle models, arena dressing, one atlas', done: false, note: 'Open question: procedural vs real glTF assets.' },
-      { id: 'm7-visual', label: 'Playwright visual regression on a fixed camera and seeded state', done: false },
-      { id: 'm7-perf', label: 'CI perf assertion: 8 vehicles under 2ms', done: false, note: 'Measured at 0.030ms — the test just is not written.' },
+      {
+        id: 'm7-art',
+        label: 'Art pass: vehicle models, arena dressing, one atlas',
+        done: false,
+        note: 'Blocked on a decision: push procedural geometry further, or wire real glTF models.',
+      },
+      {
+        id: 'm7-music',
+        label: 'Music — three tracks, cycled with M',
+        done: true,
+        note: 'Lazy-loaded (3.7MB vs 370KB of SFX), own bus at 0.30, ducks 31% under sustained fire and 55% on a near blast. M cycles 1→2→3→off; mute moved to N.',
+      },
     ],
   },
   {

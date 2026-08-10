@@ -22,6 +22,7 @@ import { rightOf, type SimEvent } from '../sim'
 import { DEFAULT_ENGINE, DEFAULT_MIX, type MixTuning } from '../content/audio'
 import { EngineVoice, type EngineDrive } from './engine'
 import { SampledEngine } from './sampled'
+import { Music } from './music'
 
 export type Ears = { readonly x: number; readonly z: number; readonly yaw: number }
 
@@ -34,14 +35,19 @@ export type Audio = {
   toggleMute(): boolean
   consume(events: readonly SimEvent[], ears: Ears, playerId: number): void
   /**
-   * Per-tick clock, for the two sounds no single event covers: the 3-2-1
-   * countdown pips and the pulse of a live mine.
+   * Per-tick clock, for the one sound no event covers: the pulse of a live mine.
+   *
+   * The 3-2-1 countdown pips used to live here too and were cut — a metronome
+   * over the three seconds before a match reads as a menu, not as a start line.
+   * The GO on `roundStarted` carries the moment on its own.
    */
-  tick(countdownSecondsLeft: number | null, liveMines: number): void
+  tick(liveMines: number): void
   update(drive: EngineDrive, dt: number): void
   /** Swap between the sampled loops and the oscillator bank. Returns true if sampled. */
   toggleEngine(): boolean
-  state(): { engine: string; voices: number; loaded: string }
+  /** Next track, or off. Returns what is now playing, or null for silence. */
+  cycleMusic(): string | null
+  state(): { engine: string; voices: number; loaded: string; music: string }
 }
 
 type SoundId =
@@ -57,7 +63,6 @@ type SoundId =
   | 'pickup'
   | 'lockOn'
   | 'lockLost'
-  | 'countdownBeep'
   | 'countdownGo'
   | 'matchEnd'
   | 'respawn'
@@ -86,20 +91,22 @@ type Spec = {
  * are doing the balancing rather than fighting the source material.
  */
 const SOUNDS: Readonly<Record<SoundId, Spec>> = {
-  // Five genuinely different shots, not one file retriggered — pairwise
-  // correlation 0.80-0.88. Only 0.0-0.4% of each shot's energy runs past 62.5ms,
-  // which is why sixteen a second rattles instead of smearing into a drone.
+  // Five genuinely different shots, not one file exported five times — the
+  // most-similar pair correlates 0.11. Capped at 200ms so a round is over
+  // before the next one lands at sixteen a second, and loudness-matched to a
+  // 0.0 dB spread across the family: variants whose levels differ rotate as an
+  // audible volume wobble, which is worse than the repetition they fix.
   gunFire: {
-    files: ['gun-1'],
+    files: ['gun-1', 'gun-2', 'gun-3', 'gun-4', 'gun-5'],
     bus: 'weapons',
     level: 0.85,
     priority: 1,
   },
-  // The sound the owner asked for by name. Five variants, pairwise correlation
-  // below 0.16 — genuinely distinct — with spectral centroids of 2.4-5.2 kHz,
-  // which is exactly the band that cuts through an engine rather than under it.
+  // Five variants, most-similar pair correlating 0.04, loudness-matched the
+  // same way. Only fires where a round actually connects, so it is less exposed
+  // than the gun — but it is the sound that says you are hitting something.
   bulletMetal: {
-    files: ['hit-1'],
+    files: ['hit-1', 'hit-2', 'hit-3', 'hit-4', 'hit-5'],
     bus: 'impacts',
     level: 0.7,
     priority: 2,
@@ -113,7 +120,6 @@ const SOUNDS: Readonly<Record<SoundId, Spec>> = {
   mineBeep: { files: ['mine-tick'], bus: 'ui', level: 0.45, priority: 1 },
   pickup: { files: ['pickup'], bus: 'ui', level: 0.8, priority: 2 },
   lockOn: { files: ['lock-on'], bus: 'ui', level: 0.5, priority: 2 },
-  countdownBeep: { files: ['beep'], bus: 'ui', level: 0.55, priority: 6 },
   lockLost: { files: ['lock-off'], bus: 'ui', level: 0.5, priority: 2 },
   countdownGo: { files: ['go'], bus: 'ui', level: 0.6, priority: 6 },
   matchEnd: { files: ['horn'], bus: 'ui', level: 0.8, priority: 6 },
@@ -146,7 +152,8 @@ const SILENT: Audio = Object.freeze({
   tick: () => {},
   update: () => {},
   toggleEngine: () => false,
-  state: () => ({ engine: 'silent', voices: 0, loaded: 'silent' }),
+  cycleMusic: () => null,
+  state: () => ({ engine: 'silent', voices: 0, loaded: 'silent', music: 'silent' }),
 })
 
 export function createAudio(options: AudioOptions = {}): Audio {
@@ -188,6 +195,19 @@ export function createAudio(options: AudioOptions = {}): Audio {
   const engine = new EngineVoice(ctx, DEFAULT_ENGINE, buses.engine)
 
   /**
+   * Music, on its own bus and deliberately quiet.
+   *
+   * 0.30 is not timidity, it is arithmetic. The tracks measure -14.7 dB RMS
+   * against roughly -18 dB for the effects — but the effects are transients
+   * that occupy a frame, while music is continuous, so equal RMS is nowhere
+   * near equal presence. Worse, 25-35% of each track's energy sits in 2-5 kHz,
+   * which is precisely the band the gun and bullet impacts were chosen to cut
+   * through. Level alone would not fix that overlap; the ducking below is what
+   * actually does.
+   */
+  const music = new Music(ctx, master, 0.3)
+
+  /**
    * Tyre slide, as a loop rather than a one-shot.
    *
    * Measured on the real car: a handbrake slide at 147 km/h runs 3.70s with the
@@ -226,7 +246,6 @@ export function createAudio(options: AudioOptions = {}): Audio {
   let isMuted = false
   let isPaused = false
   let loadState = 'loading'
-  let lastPip = -1
   let lastMineTick = 0
   let sampled: SampledEngine | null = null
   /** Which engine you are hearing. Toggled with E so the two can be compared. */
@@ -260,7 +279,9 @@ export function createAudio(options: AudioOptions = {}): Audio {
       }),
     )
     const failed = results.filter((r) => r.status === 'rejected').length
-    loadState = failed === 0 ? `${names.length} loaded` : `${names.length - failed}/${names.length}`
+    // Declared-but-absent variants are expected, not an error: the roster lists
+    // five gun takes and however many exist get used.
+    loadState = `${names.length - failed}/${names.length} loaded`
 
     // The sampled engine can only be built once its loops exist, so it is made
     // here rather than in the constructor. Until then the synth carries it.
@@ -272,8 +293,14 @@ export function createAudio(options: AudioOptions = {}): Audio {
 
   const level = (): number => (isArmed && !isMuted && !isPaused ? mix.master : 0)
 
-  /** Duck the engine briefly so a launch or a blast cuts through it. */
+  /**
+   * Get the continuous sounds out of the way of a loud one.
+   *
+   * Music ducks roughly twice as hard as the engine and holds longer. The engine
+   * is the car you are driving and should stay present; the music is furniture.
+   */
   function duck(depth: number): void {
+    music.duck(Math.min(0.85, depth * 1.6), 0.5)
     const now = ctx.currentTime
     const bus = buses.engine.gain
     bus.cancelScheduledValues(now)
@@ -294,12 +321,17 @@ export function createAudio(options: AudioOptions = {}): Audio {
     if (now - (lastStarted.get(id) ?? -1) < mix.repeatGuardSeconds) return
     lastStarted.set(id, now)
 
-    // Round-robin rather than random: random repeats itself audibly, and with
-    // five variants a cycle is inaudible while a repeat is not.
-    const turn = (cursor.get(id) ?? 0) % spec.files.length
+    // Round-robin over what actually LOADED, not over what was declared.
+    // Cycling the declared list means a slot with five names and three files on
+    // disk drops two shots in five on the floor — silently, because a missing
+    // buffer is indistinguishable from one still decoding. Filtering here makes
+    // variant count a delivery detail rather than a correctness one: ship two
+    // takes or five and the gun sounds right either way.
+    const ready = spec.files.filter((f) => buffers.has(f))
+    if (ready.length === 0) return // nothing decoded for this sound yet
+    const turn = (cursor.get(id) ?? 0) % ready.length
     cursor.set(id, turn + 1)
-    const buffer = buffers.get(spec.files[turn]!)
-    if (buffer === undefined) return // still decoding
+    const buffer = buffers.get(ready[turn]!)!
 
     let slot = voices.find((v) => v.until <= now)
     if (slot === undefined) {
@@ -392,15 +424,21 @@ export function createAudio(options: AudioOptions = {}): Audio {
             // Two sounds per round, and they are different events in the world:
             // the gun going off at the muzzle, and — only when it connects —
             // metal on metal at the far end.
-            if (event.id === playerId) play('gunFire', 1, 0)
-            else placed('gunFire', event.from, ears, 0.9)
+            if (event.id === playerId) {
+              play('gunFire', 1, 0)
+              // A light, constantly-retriggered duck rather than a pulse per
+              // round: at sixteen a second a per-shot dip would pump audibly,
+              // whereas extending one shallow duck just holds the music down
+              // for as long as the trigger is held.
+              music.duck(0.35, 0.25)
+            } else placed('gunFire', event.from, ears, 0.9)
             if (event.hit !== null) placed('bulletMetal', event.to, ears)
             break
 
           case 'explosion': {
             const near = Math.hypot(event.pos.x - ears.x, event.pos.z - ears.z) < 26
             placed(near ? 'explosionNear' : 'explosionFar', event.pos, ears)
-            if (near) duck(0.5)
+            duck(near ? 0.55 : 0.3)
             break
           }
 
@@ -461,22 +499,9 @@ export function createAudio(options: AudioOptions = {}): Audio {
       }
     },
 
-    tick(countdownSecondsLeft, liveMines): void {
+    tick(liveMines): void {
       if (!isArmed || isMuted) return
       const now = ctx.currentTime
-
-      // One pip per whole second of countdown. The sim raises `roundStarted`
-      // when the round goes live and nothing at all on the way there, so the
-      // ticks come off the clock rather than off an event.
-      if (countdownSecondsLeft !== null) {
-        const second = Math.ceil(countdownSecondsLeft)
-        if (second !== lastPip && second > 0) {
-          lastPip = second
-          play('countdownBeep', 1, 0)
-        }
-      } else {
-        lastPip = -1
-      }
 
       // A live mine ticks. Slow enough to be a warning rather than a nuisance,
       // and one pulse for the field however many are down — a minefield should
@@ -510,6 +535,10 @@ export function createAudio(options: AudioOptions = {}): Audio {
       }
     },
 
+    cycleMusic(): string | null {
+      return music.cycle()
+    },
+
     toggleEngine(): boolean {
       useSampled = !useSampled
       applyEngineChoice()
@@ -520,6 +549,7 @@ export function createAudio(options: AudioOptions = {}): Audio {
       engine: `${useSampled && sampled !== null ? 'sampled' : 'synth'} ${Math.round((useSampled && sampled !== null ? sampled : engine).revs())} rpm  g${(useSampled && sampled !== null ? sampled : engine).currentGear()}`,
       voices: voices.filter((v) => v.until > ctx.currentTime).length,
       loaded: loadState,
+      music: `${music.state()} duck ${Math.round(music.ducked() * 100)}%`,
     }),
   }
 }

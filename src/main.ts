@@ -131,7 +131,11 @@ window.addEventListener('keydown', (event) => {
     audio.setPaused(paused)
     hud.setPaused(paused)
   }
-  if (event.code === 'KeyM') audio.toggleMute()
+  // M cycles the soundtrack: track 1 -> 2 -> 3 -> off. Mute moved to N to make
+  // room for it, because one key covering "different song" and "no song" is
+  // most of what anyone wants from game music.
+  if (event.code === 'KeyM') audio.cycleMusic()
+  if (event.code === 'KeyN') audio.toggleMute()
   // E swaps the recorded engine loops for the oscillator bank. Both keep
   // running, so the switch lands at the revs you were already at.
   if (event.code === 'KeyE') audio.toggleEngine()
@@ -300,11 +304,8 @@ function frame(now: number): void {
     if (heard !== undefined) {
       audio.consume(current.events, { x: heard.pos.x, z: heard.pos.z, yaw: heard.yaw }, PLAYER)
     }
-    // The two sounds that are a state rather than an event.
-    audio.tick(
-      current.match.phase === 'countdown' ? current.match.timer * TICK_DT : null,
-      current.projectiles.filter((p) => p.weapon === 'mine').length,
-    )
+    // The one sound that is a state rather than an event.
+    audio.tick(current.projectiles.filter((p) => p.weapon === 'mine').length)
 
     // Only what happens to the player shakes the player's camera.
     const player = current.vehicles[PLAYER]

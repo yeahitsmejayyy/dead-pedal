@@ -81,6 +81,11 @@ function taskRow(task: Task): string {
       <label for="${task.id}" class="cursor-pointer select-none">
         <span class="${done ? 'text-slate-500 line-through' : 'text-slate-200'}">${text(task.label)}</span>
         ${
+          !done && task.deferred === true
+            ? `<span class="ml-2 rounded bg-slate-700/40 px-1.5 py-0.5 align-middle text-[10px] uppercase tracking-wider text-slate-400">parked</span>`
+            : ''
+        }
+        ${
           task.note === undefined
             ? ''
             : `<span class="mt-0.5 block text-xs leading-relaxed text-slate-500">${text(task.note)}</span>`
@@ -111,9 +116,18 @@ function card(milestone: Milestone): string {
     </section>`
 }
 
-/** The first milestone with work left. What to pick up next. */
+/** Work that is genuinely outstanding — not done, and not parked on purpose. */
+const live = (task: Task): boolean => !isDone(task) && task.deferred !== true
+
+/**
+ * The first milestone with live work in it.
+ *
+ * Deferred tasks are skipped deliberately. Without that the tracker points at
+ * M6's two parked items — both unreachable in a one-round mode — and "up next"
+ * stops meaning "next".
+ */
 function focus(): Milestone | undefined {
-  return MILESTONES.find((m) => countDone(m) < m.tasks.length)
+  return MILESTONES.find((m) => m.tasks.some(live))
 }
 
 function render(): void {
@@ -123,7 +137,7 @@ function render(): void {
   const all = MILESTONES.flatMap((m) => m.tasks)
   const done = all.filter(isDone).length
   const next = focus()
-  const remaining = next === undefined ? [] : next.tasks.filter((t) => !isDone(t))
+  const remaining = next === undefined ? [] : next.tasks.filter(live)
 
   app.innerHTML = `
     <header class="mb-8">

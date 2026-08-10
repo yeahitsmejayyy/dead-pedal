@@ -68,7 +68,6 @@ unobtrusive — it will be heard hundreds of times.
 | `pickup` | 1 | 0.3 s | Weapon crate collected | Picking up a weapon crate, mechanical latch snapping open followed by a short confident metallic chime, satisfying and clean |
 | `lock-on` | 1 | 0.15 s | Missile lock acquired | Missile lock acquired, single sharp electronic tone from a military targeting system, clean and urgent, no reverb |
 | `lock-off` | 1 | 0.2 s | Lock breaks | Missile lock breaking, short descending two-note electronic tone, targeting system disengaging, dry and flat |
-| `beep` | 1 | 0.15 s | Each countdown tick | Motorsport start countdown beep, single short flat electronic tone, one isolated pip from a starting light gantry |
 | `go` | 1 | 0.4 s | Countdown hits zero | Motorsport race start signal, sustained higher-pitched electronic tone as the starting lights go green, clean and bright |
 | `horn` | 1 | 1.5 s | Match ends | End of match signal, descending two-tone electronic horn like a sports arena buzzer, flat and final, not a whistle |
 | `respawn` | 1 | 0.6 s | A car comes back | Vehicle materialising back into play, quick mechanical whoosh with an electrical power-up surge underneath, short and forward-moving |
@@ -160,7 +159,7 @@ Your ears decide.
 - [ ] `crash-1` … `crash-4`
 - [ ] `mine-arm`, `mine-tick`
 - [ ] `pickup`, `lock-on`, `lock-off`
-- [ ] `beep`, `go`, `horn`, `respawn`
+- [ ] `go`, `horn`, `respawn`
 - [ ] `land-1`, `land-2`
 - [ ] `dmg-1`, `dmg-2`
 
@@ -170,6 +169,6 @@ Your ears decide.
 - [ ] `eng-high`
 - [ ] `eng-low` *(only if two loops strain in first gear — generate the other two first)*
 
-Everything except `lock-off`, `go`, `horn`, `respawn`, `land-*`, `dmg-*` and the three `eng-*`
+Countdown pips were cut — a metronome before a match reads as a menu. Everything except `lock-off`, `go`, `horn`, `respawn`, `land-*`, `dmg-*` and the three `eng-*`
 currently has a placeholder in `public/audio/` — dropping a new file over the same name replaces
 it. The engine files are new wiring rather than a swap, so they land behind a toggle.
