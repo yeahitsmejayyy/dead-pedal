@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- Everything the game loads is addressed from the site root, including the
+         models themselves inside carModels.ts. Without this, `models/x.gltf`
+         resolves against /tools/ and every car silently falls back to nothing. -->
+    <base href="/" />
+    <title>dead-pedal — model reference sheets</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 24px;
+        background: #0b0d10;
+        color: #d8dee6;
+        font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      h1 { font-size: 15px; letter-spacing: 0.18em; margin: 0 0 4px; }
+      p.sub { color: #8b95a3; margin: 0 0 20px; max-width: 70ch; }
+      .car { margin-bottom: 28px; }
+      .car h2 {
+        font-size: 12px;
+        letter-spacing: 0.18em;
+        color: #8b95a3;
+        margin: 0 0 8px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .swatch { width: 11px; height: 11px; border-radius: 2px; }
+      .views { display: flex; flex-wrap: wrap; gap: 10px; }
+      .view { text-align: center; }
+      .view canvas { display: block; border: 1px solid #2b3440; border-radius: 2px; }
+      .view span { display: block; margin-top: 4px; font-size: 10px; letter-spacing: 0.14em; color: #66707d; }
+      #status { color: #facc15; }
+      button {
+        font: inherit;
+        letter-spacing: 0.14em;
+        color: #d8dee6;
+        background: #11151b;
+        border: 1px solid #2b3440;
+        border-radius: 3px;
+        padding: 7px 14px;
+        cursor: pointer;
+        margin-bottom: 20px;
+      }
+      button:hover { border-color: #4ade80; }
+    </style>
+  </head>
+  <body>
+    <h1>MODEL REFERENCE SHEETS</h1>
+    <p class="sub">
+      Each car as the <em>game</em> builds it: scaled to its collision box, wheels seated, livery at
+      full strength. Not the raw Quaternius asset. These are the images to hand an image model as
+      reference, because they are what the player actually sees.
+    </p>
+    <button id="download">DOWNLOAD ALL AS PNG</button>
+    <div id="status">loading models…</div>
+    <div id="out"></div>
+    <script type="module" src="/tools/refsheet.ts"></script>
+  </body>
+</html>
