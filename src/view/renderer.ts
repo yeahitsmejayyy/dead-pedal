@@ -26,6 +26,7 @@ import { ChaseCamera, type CameraTuning } from './camera'
 import { Effects } from './effects'
 import { HealthBars } from './healthBars'
 import { VehicleView } from './vehicleView'
+import { loadCarModels, modelsReady } from './carModels'
 
 const GROUND = new MeshStandardMaterial({ color: 0x272d36, roughness: 1 })
 const WALL = new MeshStandardMaterial({ color: 0x2a323c, roughness: 0.8 })
@@ -151,6 +152,11 @@ export class Renderer {
     this.scene.background = new Color(0x0b0d10)
 
     this.chase = new ChaseCamera(canvas.clientWidth / canvas.clientHeight, cameraTuning)
+
+    // Fire and forget. The game starts on its procedural boxes and each view
+    // swaps itself the frame after its model lands — 2.7MB of geometry is not
+    // worth a loading screen on a game that is playable without it.
+    void loadCarModels()
 
     this.buildArena(arena)
     this.effects = new Effects(this.scene)
@@ -306,6 +312,16 @@ export class Renderer {
     }
   }
 
+  /** True once the car models have loaded. The visual test waits on this. */
+  modelsLoaded(): boolean {
+    return modelsReady()
+  }
+
+  /** Dev probe: how far the player's wheels have rotated. */
+  wheelSpin(id: number): number {
+    return this.views.get(id)?.spin() ?? 0
+  }
+
   private viewFor(id: number, archetype: string): VehicleView {
     let view = this.views.get(id)
     if (view === undefined) {
@@ -341,6 +357,7 @@ export class Renderer {
     for (const vehicle of current.vehicles) {
       const before = previous.vehicles.find((v) => v.id === vehicle.id) ?? vehicle
       const view = this.viewFor(vehicle.id, vehicle.archetype)
+      view.adoptModel()
 
       // A wreck is simply not drawn. Debris and a burning shell are M7 juice;
       // what M3 needs is for the destroyed car to stop being there.

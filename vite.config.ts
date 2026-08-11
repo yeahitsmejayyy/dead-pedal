@@ -4,7 +4,21 @@ import { defineConfig } from 'vite'
 const port = Number(process.env.PORT) || 5173
 
 export default defineConfig({
-  server: { port, strictPort: true },
+  server: {
+    port,
+    strictPort: true,
+    /**
+     * Don't watch the test tree.
+     *
+     * The visual fixture is a PNG under `tests/e2e/fixtures/`, written by the
+     * test run itself when it is missing. That file appearing inside the vite
+     * root pokes the watcher, and a full reload arriving mid-test breaks the
+     * one test that drives its own clock — which is exactly what happened on
+     * the first run after a re-record, and only that run. Nothing under
+     * `tests/` is ever served to the browser, so there is nothing to watch.
+     */
+    watch: { ignored: ['**/tests/**'] },
+  },
 
   /**
    * One dependency-optimiser cache per port, not per project.

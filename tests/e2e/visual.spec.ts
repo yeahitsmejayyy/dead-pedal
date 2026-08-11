@@ -27,7 +27,47 @@
  * machines in ways no tolerance survives. What the HUD does is already asserted
  * behaviourally in drive.spec.ts; what it looks like is not worth a flaky test.
  */
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { expect, test, type Page } from '@playwright/test'
+
+/**
+ * Resolved from this file, not the working directory, and suffixed by platform.
+ *
+ * SwiftShader is forced precisely so a laptop and CI rasterise the same, but
+ * "should" is not "does", and a per-platform baseline costs one file and
+ * removes the whole question.
+ */
+const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), `fixtures/arena-live-${process.platform}.png`)
+
+/**
+ * Compare two PNGs by pixel, returning the fraction that differ.
+ *
+ * Hand-rolled rather than `toHaveScreenshot`, which could not be made to work
+ * here: its stability loop runs on requestAnimationFrame, and this test replaces
+ * rAF to drive the clock by hand, so the assertion timed out during capture
+ * without ever rendering anything wrong. The raw capture path is provably
+ * deterministic — the second test in this file compares two of them byte for
+ * byte on every run — so the comparison is the only part that needed writing.
+ */
+function differingFraction(a: Buffer, b: Buffer): number {
+  const decode = (png: Buffer): Buffer =>
+    execFileSync('ffmpeg', ['-v', 'error', '-i', 'pipe:0', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],
+      { input: png, maxBuffer: 1 << 28 })
+  const [x, y] = [decode(a), decode(b)]
+  if (x.length !== y.length) return 1
+  let differing = 0
+  for (let i = 0; i < x.length; i += 3) {
+    // A tolerance per channel, not per pixel: a driver or three.js patch can
+    // nudge an edge pixel by a value or two without anything being wrong.
+    if (Math.abs(x[i]! - y[i]!) > 6 || Math.abs(x[i + 1]! - y[i + 1]!) > 6 || Math.abs(x[i + 2]! - y[i + 2]!) > 6) {
+      differing++
+    }
+  }
+  return differing / (x.length / 3)
+}
 
 /**
  * Replace the two clocks the frame loop reads, before any app code runs.
@@ -41,9 +81,24 @@ async function pinTime(page: Page): Promise<void> {
     let now = 0
     const pending: FrameRequestCallback[] = []
 
+    const nativeRaf = window.requestAnimationFrame.bind(window)
     performance.now = () => now
     window.requestAnimationFrame = (cb: FrameRequestCallback): number => pending.push(cb)
     window.cancelAnimationFrame = (): void => {}
+
+    /**
+     * Give the browser its own rAF back, without draining the queue.
+     *
+     * Playwright's `toHaveScreenshot` runs a stability loop on
+     * requestAnimationFrame before it compares, and with rAF replaced that
+     * callback never fires — the assertion times out having rendered nothing
+     * wrong. Restoring it here lets Playwright work while the game's own loop
+     * stays parked in `pending` forever, so the world is frozen on exactly the
+     * frame that was driven.
+     */
+    ;(window as unknown as { __release: () => void }).__release = (): void => {
+      window.requestAnimationFrame = nativeRaf
+    }
 
     // Drain exactly one frame's worth of callbacks, having advanced the clock by
     // exactly one frame. Nothing here is scheduled by the browser, so the sim
@@ -69,6 +124,17 @@ test.describe('M7 — the same seed draws the same frame', () => {
     await pinTime(page)
     await page.goto('/?silent=1')
     await page.waitForFunction(() => '__deadPedal' in window)
+    // Car models load over the network on REAL time, while the frames below run
+    // on a clock this test drives by hand. Without waiting, whether the shot
+    // catches the glTF cars or the procedural boxes they replace comes down to
+    // how fast the machine fetched 2.7MB — which is a flake waiting to happen,
+    // and one that would have been blamed on the renderer.
+    await page.waitForFunction(
+      () => (window as unknown as { __deadPedal: { modelsLoaded: () => boolean } })
+        .__deadPedal.modelsLoaded(),
+      undefined,
+      { timeout: 30_000 },
+    )
   })
 
   test('renders an identical frame from a pinned clock and a fixed seed', async ({ page }) => {
@@ -113,14 +179,57 @@ test.describe('M7 — the same seed draws the same frame', () => {
     // 14 -> 19. The turn scrubs some speed off, hence 25 rather than 30.
     expect(at.speed, 'the car should be at real speed in the pinned frame').toBeGreaterThan(25)
 
-    // Canvas only. See the header for why the HUD is excluded.
-    await expect(page.locator('#scene')).toHaveScreenshot('arena-live.png', {
-      // Not zero. SwiftShader is deterministic within a machine but a driver or
-      // three.js patch release can move a handful of pixels on an edge without
-      // anything being wrong. This is loose enough to survive that and tight
-      // enough that a car in the wrong place is still a failure.
-      maxDiffPixelRatio: 0.01,
-    })
+    // Freeze the world, THEN hand rAF back.
+    //
+    // Both halves are needed. Parking the loop entirely leaves the WebGL back
+    // buffer with nothing repainting it, and a canvas without
+    // preserveDrawingBuffer has nothing stable for Playwright to read — the
+    // capture times out having rendered nothing wrong. Pause is the tool that
+    // already exists for this: the sim stops, the renderer keeps drawing the
+    // same held frame, so the canvas is both static and freshly painted.
+    await page.keyboard.press('p')
+    await page.evaluate(() => (window as unknown as { __release: () => void }).__release())
+    await page.waitForTimeout(150)
+
+    // Canvas only — and hiding the overlays is what makes that true.
+    //
+    // `#scene` IS the canvas, but an element screenshot captures that REGION of
+    // the viewport, compositing whatever DOM is painted over it. The canvas is
+    // full-viewport, so the shot arrived with the HUD, the key legend, the debug
+    // panel and the pause scrim in it: font rasterisation in a test that
+    // documents itself as excluding exactly that, and the scrim dimming the one
+    // thing being measured.
+    await page.addStyleTag({ content: '#hud, #keys, .tp-dfwv { display: none !important }' })
+    const shot = await page.locator('#scene').screenshot()
+
+    // Recording FAILS rather than passing quietly. A visual test that writes its
+    // own baseline and goes green is a test that reports success on a machine
+    // where it has never once compared anything — which is how the first version
+    // of this passed while the models were silently not loading.
+    if (!existsSync(FIXTURE)) {
+      mkdirSync(dirname(FIXTURE), { recursive: true })
+      writeFileSync(FIXTURE, shot)
+      throw new Error(`No baseline. Recorded one at ${FIXTURE} — look at it, then re-run.`)
+    }
+
+    const drift = differingFraction(readFileSync(FIXTURE), shot)
+
+    /**
+     * 0.01%, which is 92 pixels of 921,600. Measured, not guessed:
+     *
+     *   unchanged, twice          0.000%   ← capture is deterministic
+     *   wheels off their axles    0.036%   ← the bug this fixture caught
+     *   livery tint 0.55 → 0.35   0.374%
+     *   car scaled 10% long       0.616%
+     *   models fail to load       0.896%   ← cars fall back to boxes
+     *
+     * The car is only ~1.3% of the frame, so no car-shaped regression can ever
+     * be worth much more than that last figure. The previous threshold was 1%,
+     * above every single one of these: it sat there going green while the cars
+     * rendered as untextured boxes. Re-record deliberately (delete the file) —
+     * do not widen this to make a failure go away.
+     */
+    expect(drift, `${(drift * 100).toFixed(3)}% of pixels differ from ${FIXTURE}`).toBeLessThan(0.0001)
   })
 
   test('draws the same frame twice from the same start', async ({ page }) => {

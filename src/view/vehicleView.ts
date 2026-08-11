@@ -23,6 +23,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { clamp, lerp } from '../core/scalar'
 import type { VehicleTuning } from '../content/vehicles'
 import { WEAPONS } from '../content/weapons'
+import { carFor } from './carModels'
 import { LIVERIES } from './palette'
 
 const BODIES = LIVERIES.map(
@@ -40,13 +41,20 @@ export class VehicleView {
   readonly root: Group
   /** Pitch and roll, so they compose with yaw instead of fighting it. */
   private readonly body: Group
-  private readonly wheels: Object3D[] = []
-  private readonly wheelRadius: number
+  private wheels: Object3D[] = []
+  private wheelRadius: number
+  /** Everything built in code, kept so it can be removed when a model lands. */
+  private readonly procedural: Object3D[] = []
+  private readonly tuning: VehicleTuning
+  private readonly livery: number
+  private hasModel = false
 
   private pitch = 0
   private roll = 0
 
   constructor(tuning: VehicleTuning, livery = 0) {
+    this.tuning = tuning
+    this.livery = livery
     const paint = BODIES[livery % BODIES.length]!
     const { x: hw, y: hh, z: hl } = tuning.halfExtents
 
@@ -62,17 +70,20 @@ export class VehicleView {
     chassis.position.y = hh * 0.15
     chassis.castShadow = true
     this.body.add(chassis)
+    this.procedural.push(chassis)
 
     const cabin = new Mesh(new BoxGeometry(hw * 1.6, hh * 0.9, hl * 0.95), CABIN)
     cabin.position.set(0, hh * 0.95, -hl * 0.1)
     // No shadow. A cabin's shadow lands inside the chassis's own, so it is four
     // draw calls a frame (one per car) spent on something nobody can see.
     this.body.add(cabin)
+    this.procedural.push(cabin)
 
     // A nose stripe, so which end is the front is never in doubt.
     const nose = new Mesh(new BoxGeometry(hw * 0.5, hh * 0.3, hl * 0.25), CABIN)
     nose.position.set(0, hh * 0.75, hl * 0.86)
     this.body.add(nose)
+    this.procedural.push(nose)
 
     // ── hood guns ────────────────────────────────────────────────────────
     // Positioned from `WEAPONS.machineGun.muzzles` rather than from numbers
@@ -104,7 +115,14 @@ export class VehicleView {
     }
 
     const guns = mergeGeometries(gunParts, false)
-    if (guns !== null) this.body.add(new Mesh(guns, GUNMETAL))
+    if (guns !== null) {
+      const mesh = new Mesh(guns, GUNMETAL)
+      // The guns are NOT procedural-only scenery: they stay when the model
+      // arrives, because they are positioned from `WEAPONS.machineGun.muzzles`
+      // and that coupling is the reason moving a muzzle in content moves the
+      // model. A downloaded car has no idea where this game's guns go.
+      this.body.add(mesh)
+    }
 
     const wheelGeometry = new CylinderGeometry(this.wheelRadius, this.wheelRadius, 0.34, 12)
     wheelGeometry.rotateZ(Math.PI / 2)
@@ -119,8 +137,36 @@ export class VehicleView {
         // pixels of shadow, entirely inside the chassis's.
         this.body.add(wheel)
         this.wheels.push(wheel)
+        this.procedural.push(wheel)
       }
     }
+  }
+
+  /**
+   * Replace the box with a real vehicle, once its model has loaded.
+   *
+   * Called every frame and cheap when there is nothing to do — the models arrive
+   * asynchronously and views are created lazily, so there is no single moment
+   * when "everything is ready" that this could hang off instead.
+   *
+   * The guns stay. They are placed from content and a downloaded car has no idea
+   * where this game's muzzles are.
+   */
+  adoptModel(): void {
+    if (this.hasModel) return
+    const car = carFor(this.livery, this.tuning)
+    if (car === null) return
+
+    for (const part of this.procedural) {
+      this.body.remove(part)
+      if (part instanceof Mesh) part.geometry.dispose()
+    }
+    this.procedural.length = 0
+
+    this.body.add(car.body)
+    this.wheels = car.wheels
+    this.wheelRadius = car.wheelRadius
+    this.hasModel = true
   }
 
   set(
@@ -153,5 +199,10 @@ export class VehicleView {
 
     const spin = (forwardSpeed / this.wheelRadius) * dt
     for (const wheel of this.wheels) wheel.rotation.x -= spin
+  }
+
+  /** Dev probe: total wheel rotation, and how many wheels were found. */
+  spin(): number {
+    return (this.wheels[0]?.rotation.x ?? 0) * 1000 + this.wheels.length
   }
 }
