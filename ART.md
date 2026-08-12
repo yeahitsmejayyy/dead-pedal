@@ -65,10 +65,10 @@ colour system, which is a thing no other project can copy without copying this c
 | Hex | Name | Role | Source in code |
 |---|---|---|---|
 | `#0b0d10` | night black | The sky, the reserved wordmark band, and the deepest value in every image. Never lifted, never tinted, never atmospheric. | `renderer.ts:152` and `index.html` body background |
-| `#d8452f` | rust red | **Livery 0, the player.** Armoured sports coupe. Largest saturated area in any image it appears in. | `palette.ts:24` |
-| `#3f8ecc` | faded blue | **Livery 1.** Armoured pickup. The only cool livery, and the thing that stops a warm-keyed night picture going monochrome. Never used as sky, shadow or atmosphere. | `palette.ts:24` |
-| `#6bbf59` | dirty green | **Livery 2.** Armoured box truck. Slabbiest silhouette, so it takes the second-largest saturated area. | `palette.ts:24` |
-| `#c9a227` | mustard gold | **Livery 3.** Clean sports car. The only livery allowed to double as warm bare metal. | `palette.ts:24` |
+| `#d8452f` | rust red | **Livery 0, the player.** Clean sports coupe — `Vehicle_Sports`, trimmed in scuffed dirty steel. Largest saturated area in any image it appears in. | `palette.ts:24` |
+| `#3f8ecc` | faded blue | **Livery 1.** Armoured pickup — charcoal `#3a3e45` bodywork on galvanised plate, with the blue on the plough. The one car whose paint is NOT its identity colour, because a charcoal blip measures 1.62:1 on the radar dial and vanishes. The only cool livery, and the thing that stops a warm-keyed night picture going monochrome. Never used as sky, shadow or atmosphere. | `palette.ts:24` |
+| `#4f9c46` | dirty green | **Livery 2.** Armoured box truck — bodywork a step darker at `#3d7a35`, on red-oxide primer. Slabbiest silhouette, so it takes the second-largest saturated area. | `palette.ts:24` |
+| `#c9a227` | mustard gold | **Livery 3.** Armoured sports coupe — `Vehicle_Sports_Armored`, plated in dark cool steel. The only livery allowed to double as warm bare metal. | `palette.ts:24` |
 | `#ff8c1a` | boost orange | The only warm emitter in the system: chevrons, fire, muzzle flash, ember dots. Light, never paint. Max ~8% of frame. | `renderer.ts:48` |
 | `#fff2df` | key white | The single light source. Taken from `DirectionalLight(0xfff2df, 1.5)` and dropped to 25–35° for drama. Warm and almost unsaturated, so it can never be mistaken for a chevron. | `renderer.ts:171` |
 | `#e6edf3` | off-white | Scratched speculars, the pale dust film, and the wordmark face. The only light value on the board. | `palette.ts:56`, machine-gun crate |
@@ -396,7 +396,7 @@ MEDIUM. Painted cover illustration — not a photograph, not a 3D render, not di
 
 PAINT AND SURFACE. Vehicle paint is an opaque base coat with a transparent wet clearcoat over it. The base coat is laid in three or four separated value steps per panel with dry-brush transitions between them, so the lit face of each panel is the true livery colour. The clearcoat is the mirror: deep and wet, with a cool reflected edge running along the underside of every panel and a hot white specular scratched in last. Chrome is painted as the classic split reflection — dark ground reflection below, pale reflection above, a hard horizon line between them, fine bright scratches cutting through the reflection in the opposite direction to the surface they sit on, never a soft metallic gradient. No large surface carries a continuous even tone: every panel is broken by at least three of a shallow dent catching the key at a different angle, a sanded patch, a run in the clear, or a wiped streak through the dust. Every specular highlight on the bodywork is interrupted at least twice by a scratch or by orange-peel ripple in the clearcoat.
 
-COLOUR. Locked to #d8452f rust red, #3f8ecc faded blue, #6bbf59 dirty green, #c9a227 mustard gold, #ff8c1a boost orange, #fff2df key white, #e6edf3 off-white, #6b5a3e desert ochre, #2a323c concrete grey, #4c5666 pale concrete and #0b0d10 night black. The four car colours hold full chroma from the lit plane into the shadow, however filthy the car is. #ff8c1a belongs only to things that emit light — painted boost chevrons, muzzle flash, fire, ember — and it never physically touches #d8452f or #c9a227: a band of unlit ground or a black panel gap always separates them. Grime is rendered as value and temperature, never as a brown tint: soot is a cool grey-blue in the shadows, oil is near-black with one warm specular edge, dust is a pale cool film. There is no global sepia anywhere. The grade is not orange and teal; the cool side is a desaturated slate, under ten per cent saturation, never cyan.
+COLOUR. Locked to #d8452f rust red, #3f8ecc faded blue, #4f9c46 dirty green, #c9a227 mustard gold, #ff8c1a boost orange, #fff2df key white, #e6edf3 off-white, #6b5a3e desert ochre, #2a323c concrete grey, #4c5666 pale concrete and #0b0d10 night black. The four car colours hold full chroma from the lit plane into the shadow, however filthy the car is. #ff8c1a belongs only to things that emit light — painted boost chevrons, muzzle flash, fire, ember — and it never physically touches #d8452f or #c9a227: a band of unlit ground or a black panel gap always separates them. Grime is rendered as value and temperature, never as a brown tint: soot is a cool grey-blue in the shadows, oil is near-black with one warm specular edge, dust is a pale cool film. There is no global sepia anywhere. The grade is not orange and teal; the cool side is a desaturated slate, under ten per cent saturation, never cyan.
 
 LIGHT. One hard key of warm near-white #fff2df, no fill, motivated by a floodlight mast standing inside the scene or just outside the frame edge. The key is warm but almost unsaturated and can never be as saturated as the chevrons. The far third of every subject falls to near-black silhouette held by a single scraped highlight along the edge. Cast shadows are hard-edged and read as shape. Highlights clip to a hard-edged white core with no halo around them, and falloff is inverse-square, reaching near-black within two vehicle lengths. No rim light on both sides of any object, no bloom, no glow halo, no symmetrical backlight, no atmospheric haze and no fog — the air is clear and the black is empty black.
 
@@ -434,9 +434,9 @@ First, build the ground. A bounded arena floor of dry high-desert dirt in ochre 
 
 Then, at frame-left in the near-middle ground, a broad tent-shaped dirt ramp with three chevron arrows painted in #ff8c1a on its short steep back face. The chevrons are freshly painted and catch the key, throwing a low warm pool of orange across the dirt at the foot of the ramp only.
 
-Then the hero. A battered armoured sports coupe in rust red #d8452f — welded steel plate bolted over the doors, a heavy tubular bull bar across the nose, a roof rack, an exposed roll cage, and one machine gun mounted on the bonnet with its barrel raked slightly up and to the right. It is airborne off the ramp, all four wheels clear of the dirt, nose high, turned three-quarters toward the picture plane and slightly across it, with clods of dirt still falling out of the tyre treads and off the undertray. It has four wheels, one at each corner. Its near-side window has no glass left, only the black rubber channel and a bent frame, and inside the cage sits a full-face crash helmet with a mirrored visor down and sealed — bare scuffed shell going grey at the crown, a chipped hand-painted band across the top in the same rust red, soot on the chin bar. The visor is an opaque black mirror carrying one small warped reflection of the floodlight mast and the chevrons. No skin, no face, no eyes, no hands.
+Then the hero. A battered low two-door sports coupe in rust red #d8452f — a clean-lined body with no bolt-on plate, scuffed dirty-steel bumpers and mirrors, a heavy tubular bull bar across the nose, and one machine gun mounted on the bonnet with its barrel raked slightly up and to the right. It is airborne off the ramp, all four wheels clear of the dirt, nose high, turned three-quarters toward the picture plane and slightly across it, with clods of dirt still falling out of the tyre treads and off the undertray. It has four wheels, one at each corner. Its near-side window has no glass left, only the black rubber channel and a bent frame, and inside the cage sits a full-face crash helmet with a mirrored visor down and sealed — bare scuffed shell going grey at the crown, a chipped hand-painted band across the top in the same rust red, soot on the chin bar. The visor is an opaque black mirror carrying one small warped reflection of the floodlight mast and the chevrons. No skin, no face, no eyes, no hands.
 
-Then three rival cars, smaller and further back, so the full cast reads. A #c9a227 mustard-gold low unarmoured sports car in close pursuit at frame-right in the mid-ground, catching one hard edge of key light down its flank. A #3f8ecc faded-blue armoured pickup with a plated flatbed further back at frame-right near the wall. A #6bbf59 dirty-green slab-sided armoured box truck at far frame-left against the wall, almost in silhouette. Each has four wheels, one at each corner.
+Then three rival cars, smaller and further back, so the full cast reads. A mustard-gold #c9a227 armoured sports coupe in close pursuit at frame-right in the mid-ground, welded plate over its doors and dark steel plating, catching one hard edge of key light down its flank. A charcoal armoured pickup with a plated flatbed and a faded-blue #3f8ecc plough further back at frame-right near the wall. A slab-sided armoured box truck in dark green #3d7a35 over red-oxide primer at far frame-left against the wall, almost in silhouette. Each has four wheels, one at each corner.
 
 Finally, at frame-left just past the ramp, a wrecked car burns on the dirt: torn sheet metal, a shredded tyre carcass unwinding, hydraulic fluid pooled near-black on the ground, and a column of backlit smoke rising and dispersing before it reaches the top of the frame. A band of unlit dirt separates the fire and the chevrons from the red car's bodywork at every point.
 
@@ -799,7 +799,7 @@ Then two steel lattice floodlight masts. The near one stands at frame-left with 
 
 Then, at right of centre in the mid-ground, a tent-shaped dirt ramp turned three-quarters to camera, with three chevron arrows painted in #ff8c1a on its short steep back face, scuffed and half-buried in dirt.
 
-Then one vehicle only, parked and still. A battered armoured sports coupe in rust red #d8452f at frame-left in the near-middle ground, three-quarter front to camera, welded steel plate over the doors, a heavy bull bar, a roof rack, an exposed roll cage and one machine gun on the bonnet with the barrel raked away toward the wall. Four wheels, one at each corner. Engine off, nobody in it, all glass opaque black. A thin column of heat shimmer is absent and the air is clear.
+Then one vehicle only, parked and still. A battered low two-door sports coupe in rust red #d8452f at frame-left in the near-middle ground, three-quarter front to camera, clean-lined with no bolt-on plate, scuffed dirty-steel bumpers, a heavy bull bar and one machine gun on the bonnet with the barrel raked away toward the wall. Four wheels, one at each corner. Engine off, nobody in it, all glass opaque black. A thin column of heat shimmer is absent and the air is clear.
 
 CAMERA. Camera height one metre above the dirt, looking slightly up. The horizon sits one third of the way up the frame. Three-point perspective with the vanishing points off-canvas, exaggerated wide-angle perspective distortion — drawn, not photographed. The composition is weighted left and the horizon is not level, leaving the centre and right of the frame comparatively open.
 
@@ -826,11 +826,11 @@ Create an image of a fully worked-up airbrush-and-acrylic painted contact sheet 
 
 Strict continuity across all four panels: identical medium, identical palette, identical key-light direction and angle, identical level of finish, identical camera height, identical ground treatment, identical near-black background. The four vehicles differ only in silhouette and paint colour.
 
-Top left: a battered armoured sports coupe in rust red #d8452f, welded steel plate over the doors, a heavy bull bar, a roof rack, an exposed roll cage and one machine gun mounted on the bonnet.
+Top left: a battered low two-door sports coupe in rust red #d8452f, clean-lined with no bolt-on plate, scuffed dirty-steel bumpers and mirrors, a heavy bull bar and one machine gun mounted on the bonnet.
 
 Top right: a battered armoured pickup in faded blue #3f8ecc, a plated flatbed, a heavy bull bar, an exposed roll cage over the cab and one machine gun mounted on the bonnet.
 
-Bottom left: a slab-sided armoured box truck in dirty green #6bbf59, plated flanks, a heavy bull bar, a roof rack over the cab and one machine gun mounted on the cab roof.
+Bottom left: a slab-sided armoured box truck in dark green #3d7a35 over red-oxide primer, plated flanks, a heavy bull bar, a roof rack over the cab and one machine gun mounted on the cab roof.
 
 Bottom right: a low unarmoured sports car in mustard gold #c9a227, clean-bodied and unplated, a small rear spoiler and one machine gun mounted on the bonnet.
 
@@ -875,7 +875,7 @@ Aspect ratio 4:5.
 |---|---|---|---|---|
 | `car-0-red` | 0, player | `rust red #d8452f` | a battered armoured sports coupe with welded steel plate over the doors, a heavy bull bar, a roof rack, an exposed roll cage and one machine gun mounted on the bonnet | `Vehicle_Sports_Armored.gltf` |
 | `car-1-blue` | 1 | `faded blue #3f8ecc` | a battered armoured pickup with a plated flatbed, a heavy bull bar, an exposed roll cage over the cab and one machine gun mounted on the bonnet | `Vehicle_Pickup_Armored.gltf` |
-| `car-2-green` | 2 | `dirty green #6bbf59` | a slab-sided armoured box truck with plated flanks, a heavy bull bar, a roof rack over the cab and one machine gun mounted on the cab roof | `Vehicle_Truck_Armored.gltf` |
+| `car-2-green` | 2 | `dark green #3d7a35` on red-oxide primer | a slab-sided armoured box truck with plated flanks, a heavy bull bar, a roof rack over the cab and one machine gun mounted on the cab roof | `Vehicle_Truck_Armored.gltf` |
 | `car-3-gold` | 3 | `mustard gold #c9a227` | a low unarmoured sports car, clean-bodied and unplated, with a small rear spoiler and one machine gun mounted on the bonnet | `Vehicle_Sports.gltf` |
 
 Two casting notes. `car-3-gold` is the risky plate: `#c9a227` and `#ff8c1a` are neighbours in hue,
@@ -929,7 +929,7 @@ Everything important in the middle band or the crop eats it.
 ```
 Create an image of a fully worked-up airbrush-and-acrylic painted cover illustration for a stylised arcade vehicular-combat video game, ESRB Teen, in the tradition of late-1980s to late-1990s console box art. One vehicle, close, at night, under a floodlight. All damage in this picture is to machinery and property.
 
-A battered armoured sports coupe in rust red #d8452f fills the left half of the frame — welded steel plate over the doors, a heavy tubular bull bar across the nose, a roof rack, an exposed roll cage and one machine gun mounted on the bonnet with the barrel raked up and to the right. Four wheels, one at each corner. It is airborne, nose high, turned three-quarters toward the picture plane, with clods of dirt still falling out of the tyre treads. Its near-side window has no glass, only a bent frame, and inside sits a full-face crash helmet with an opaque mirrored visor down and sealed, carrying one small warped reflection of the floodlight. No skin, no face, no hands.
+A battered low two-door sports coupe in rust red #d8452f fills the left half of the frame — clean-lined with no bolt-on plate, scuffed dirty-steel bumpers, a heavy tubular bull bar across the nose and one machine gun mounted on the bonnet with the barrel raked up and to the right. Four wheels, one at each corner. It is airborne, nose high, turned three-quarters toward the picture plane, with clods of dirt still falling out of the tyre treads. Its near-side window has no glass, only a bent frame, and inside sits a full-face crash helmet with an opaque mirrored visor down and sealed, carrying one small warped reflection of the floodlight. No skin, no face, no hands.
 
 Behind and below it, a tent-shaped dirt ramp with three chevron arrows painted in #ff8c1a on its short steep back face, and beyond that a four-metre board-formed concrete wall in grey #2a323c, scorched and chipped. Above the wall there is only unlit black night. A band of unlit dirt separates the chevrons from the red bodywork at every point. There are no other vehicles in this image and no people anywhere.
 
@@ -1000,10 +1000,13 @@ nothing. These are optional and separate from shipping the cover.
 | Floodlight masts | New, four poles plus unlit emissive quads | ~4 draw calls | First structure in the game taller than the wall. Gives the black void a reason to be black: you are standing inside a lit pool |
 | Floor toward dirt | `renderer.ts:31`, `0x272d36` → toward `0x6b5a3e` | One constant | **Do this last and carefully.** The terrain was decided as high desert dirt and the floor is currently concrete blue-grey, so it is a real bug. But lightening the ground is what the crate-colour separation asserts against. Run the crate-colour tests *before* re-recording the fixture, and abandon the change if separations fail |
 
-The first row is the one that matters. **The build currently does not honour its own key:**
-`carModels.ts:110` lerps each livery 55% toward white before multiplying it over the Quaternius
-texture atlas, so the player's car renders as `#ebb9b6` dusty pink against a HUD that says
-`#d8452f`. The art shows the code value, not the screen value. Closing that gap is one constant.
+**The livery gap is closed, and it was not closed with a constant.** `carModels.ts` used to lerp
+each livery 55% toward white and multiply it over the shared atlas, which rendered the player's car
+`#ebb9b6` dusty pink against a HUD reading `#d8452f` — and which could only ever move the whole
+model at once. It now rewrites the atlas per car, swatch by swatch, so body, plate, plough and rust
+are independently addressable. See `src/view/carPaint.ts`; the swatch coverage was measured by
+triangle area, and which swatch is which was confirmed by rendering each in a debug colour. That is
+why the art can specify charcoal bodywork with a blue plough and expect the build to match.
 
 Draw-call budget is 100 and the frame currently measures around 70, so the masts fit. Any of these
 that changes a pixel breaks the pinned fixture at `tests/e2e/fixtures/arena-live-darwin.png`, whose

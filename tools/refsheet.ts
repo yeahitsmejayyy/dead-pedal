@@ -9,11 +9,8 @@
  *
  * Two deliberate departures from what the game draws:
  *
- * 1. LIVERY AT FULL STRENGTH. `carModels.ts` lerps each livery 55% toward white
- *    before multiplying it over the texture atlas, so the player's rust red
- *    `#d8452f` renders as `#ebb9b6`. ART.md tells the illustrator to paint the
- *    code value, because the radar blips and HUD pips draw the code value. The
- *    reference has to agree with the document, not with the current bug.
+ * 1. NEUTRAL, EVEN LIGHT, not the game's single warm key at 10.6% luminance.
+ *    A reference sheet lit like the game is a reference sheet you cannot read.
  * 2. ONE SCALE FOR EVERY IMAGE. The ortho frustum is sized once, from the
  *    largest car, and reused. Views are therefore comparable: the box truck is
  *    visibly bigger than the sports car, which is exactly the fact a reference
@@ -24,8 +21,6 @@ import {
   Box3,
   Color,
   DirectionalLight,
-  Mesh,
-  MeshStandardMaterial,
   OrthographicCamera,
   PerspectiveCamera,
   Scene,
@@ -35,6 +30,7 @@ import {
 } from 'three'
 import { DEFAULT_VEHICLE, tuningFor } from '../src/content/vehicles'
 import { CAR_MODELS, carFor, loadCarModels } from '../src/view/carModels'
+import { CAR_PAINT } from '../src/view/carPaint'
 import { LIVERIES } from '../src/view/palette'
 
 /** Big enough to be useful as reference, small enough that 20 of them are quick. */
@@ -60,6 +56,12 @@ type View = {
 const VIEWS: readonly View[] = [
   { name: 'front', dir: [0, 0, 1] },
   { name: 'front 3/4', dir: [1, 0.42, 1], perspective: true },
+  // A worm's-eye hero, because that is the camera cover art actually uses: down
+  // at the dirt looking slightly up, so the car towers. Negative y puts the lens
+  // BELOW the car's centre. Without this the illustrator has to invent the
+  // undercut on the bumper and the roofline foreshortening, and inventing them
+  // is how you end up with a car that is not this car.
+  { name: 'hero low 3/4', dir: [1, -0.12, 1.05], perspective: true },
   // Camera on -X, not +X. A camera on +X puts world +Z — the nose — on the
   // screen LEFT, because screen-right works out to -Z there. Every automotive
   // side profile ever drawn has the nose on the right, and a reference sheet
@@ -74,7 +76,7 @@ const VIEWS: readonly View[] = [
 ]
 
 /** What each livery is, in words, for the sheet labels and for ART.md's substitution table. */
-const BODIES = ['armoured sports coupe', 'armoured pickup', 'armoured box truck', 'clean sports car']
+const BODIES = ['clean sports car (player)', 'armoured pickup', 'armoured box truck', 'armoured sports coupe']
 
 const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
 renderer.setSize(SIZE, SIZE, false)
@@ -100,21 +102,6 @@ scene.add(fill)
 
 const tuning = tuningFor(DEFAULT_VEHICLE)
 
-function repaintFullStrength(root: object, livery: number): void {
-  const paint = new Color(LIVERIES[livery % LIVERIES.length]!)
-  ;(root as { traverse: (cb: (n: unknown) => void) => void }).traverse((node) => {
-    if (!(node instanceof Mesh)) return
-    const material = node.material
-    if (!(material instanceof MeshStandardMaterial)) return
-    // Wheels and glass are near-black in the atlas and must stay that way; only
-    // the panels carry paint. Luminance is the cheapest way to tell them apart
-    // and it is right for every one of these four models.
-    const { r, g, b } = material.color
-    if (0.2126 * r + 0.7152 * g + 0.0722 * b < 0.16) return
-    material.color.copy(paint)
-  })
-}
-
 const out = document.getElementById('out')!
 const status = document.getElementById('status')!
 const sheets: { name: string; dataUrl: string }[] = []
@@ -127,7 +114,6 @@ async function build(): Promise<void> {
   const cars = CAR_MODELS.map((_, livery) => {
     const car = carFor(livery, tuning)
     if (car === null) return null
-    repaintFullStrength(car.body, livery)
     const sphere = new Box3().setFromObject(car.body).getBoundingSphere(new Sphere())
     radius = Math.max(radius, sphere.radius)
     return car
@@ -139,19 +125,20 @@ async function build(): Promise<void> {
 
   for (const [livery, car] of cars.entries()) {
     if (car === null) continue
+    const model = CAR_MODELS[livery]!
 
     const wrap = document.createElement('div')
     wrap.className = 'car'
     const hex = `#${LIVERIES[livery]!.toString(16).padStart(6, '0')}`
     wrap.innerHTML =
       `<h2><i class="swatch" style="background:${hex}"></i>` +
-      `LIVERY ${livery} · ${BODIES[livery]} · ${CAR_MODELS[livery]} · ${hex}</h2>` +
+      `LIVERY ${livery} · ${BODIES[livery]} · ${model} · ${hex} · ${CAR_PAINT[model]?.treatment ?? ''}</h2>` +
       `<div class="views"></div>`
     const views = wrap.querySelector('.views')!
     out.appendChild(wrap)
 
-    // The sheet is one strip per car: five views side by side, which is one file
-    // to drag into a prompt instead of five.
+    // The sheet is one strip per car: every view side by side, which is one file
+    // to drag into a prompt instead of six.
     const sheet = document.createElement('canvas')
     sheet.width = SIZE * VIEWS.length
     sheet.height = SIZE
@@ -192,10 +179,25 @@ async function build(): Promise<void> {
     }
 
     scene.remove(car.body)
-    sheets.push({ name: `${CAR_MODELS[livery]}-livery${livery}`, dataUrl: sheet.toDataURL('image/png') })
+    sheets.push({ name: `${model}-livery${livery}`, dataUrl: sheet.toDataURL('image/png') })
   }
 
-  status.textContent = `${sheets.length} cars · ${VIEWS.length} views each · same scale throughout`
+  // One sheet with every car on it, at half scale. Four files is right when you
+  // want a single car in front of the model; one file is right when you want it
+  // to see the whole cast and keep them distinct from each other.
+  const all = document.createElement('canvas')
+  all.width = (SIZE * VIEWS.length) / 2
+  all.height = (SIZE * sheets.length) / 2
+  const allCtx = all.getContext('2d')!
+  await Promise.all(
+    sheets.map(async (sheet, row) => {
+      const bitmap = await createImageBitmap(await (await fetch(sheet.dataUrl)).blob())
+      allCtx.drawImage(bitmap, 0, (row * SIZE) / 2, all.width, SIZE / 2)
+    }),
+  )
+  sheets.push({ name: 'all-four', dataUrl: all.toDataURL('image/png') })
+
+  status.textContent = `${sheets.length - 1} cars · ${VIEWS.length} views each · same scale throughout`
   ;(window as unknown as { __sheets: typeof sheets }).__sheets = sheets
 }
 

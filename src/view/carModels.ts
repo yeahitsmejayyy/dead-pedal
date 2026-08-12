@@ -12,23 +12,37 @@
  * a model that arrives 5.66m long gets scaled to fit the 4.2m collision box, not
  * indulged. Everything here is that normalisation.
  */
-import { Box3, Color, Group, Mesh, MeshStandardMaterial, type Object3D, Vector3 } from 'three'
+import {
+  Box3,
+  type CanvasTexture,
+  Group,
+  Mesh,
+  MeshStandardMaterial,
+  type Object3D,
+  type Texture,
+  Vector3,
+} from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import type { VehicleTuning } from '../content/vehicles'
-import { LIVERIES } from './palette'
+import { CAR_PAINT, repaint } from './carPaint'
 
 /**
- * Which vehicle each car drives, by id.
+ * Which vehicle each car drives, by id. Index 0 is the player.
  *
  * Three armoured and one clean, deliberately. Pickup and Pickup_Armored side by
  * side would read as the same car twice; a clean Sports next to an armoured one
  * reads as two different drivers. Silhouette first, detail second.
+ *
+ * The clean Sports is the PLAYER, which is not the obvious choice and is worth
+ * the line: it is the only model whose bodywork is one unbroken 64% of its
+ * surface, so it carries the loudest livery with the least interruption. You
+ * are looking at your own car more than any other and it has to read instantly.
  */
 export const CAR_MODELS = [
-  'Vehicle_Sports_Armored',
+  'Vehicle_Sports',
   'Vehicle_Pickup_Armored',
   'Vehicle_Truck_Armored',
-  'Vehicle_Sports',
+  'Vehicle_Sports_Armored',
 ] as const
 
 export type CarModel = (typeof CAR_MODELS)[number]
@@ -52,7 +66,7 @@ export type LoadedCar = {
  * 1.9m — and that is the right trade for this game: a car that looks chunkier
  * than its collider reads as heavy, while one scaled to its width looks stunted.
  */
-function normalise(source: Object3D, tuning: VehicleTuning, livery: number): LoadedCar {
+function normalise(source: Object3D, tuning: VehicleTuning, painted: CanvasTexture | null): LoadedCar {
   const model = source.clone(true)
 
   const box = new Box3().setFromObject(model)
@@ -95,19 +109,16 @@ function normalise(source: Object3D, tuning: VehicleTuning, livery: number): Loa
     material.side = 0 // FrontSide
 
     /**
-     * Tint toward the car's livery.
+     * Swap in the repainted atlas, and stop tinting.
      *
-     * The models carry their own colours in a shared palette atlas, so out of
-     * the box all four are whatever Quaternius painted them — and the radar,
-     * the health bars and the scoreboard all say red, blue, green, gold. The
-     * HUD was right and the cars were wrong, so the cars move.
-     *
-     * Multiplied at 55% rather than replaced: full strength flattens the
-     * texture into one colour and throws away the panel detail that makes them
-     * look beaten up, which is the whole reason for using these models.
+     * `material.color` stays white on purpose. It used to hold the livery at 55%
+     * strength, which was the only way to colour a car when one multiplier had
+     * to serve the whole model — and it meant the paint, the plate, the glass
+     * and the rust all moved together, and the player's `#d8452f` arrived on
+     * screen as `#ebb9b6`. The colour now lives in the texture, per swatch, at
+     * full strength, so the car and its radar blip finally agree.
      */
-    const paint = new Color(LIVERIES[livery % LIVERIES.length]!)
-    material.color.copy(new Color(0xffffff).lerp(paint, 0.55))
+    if (painted !== null && material.map !== null) material.map = painted
     node.material = material
   })
 
@@ -151,7 +162,20 @@ function seatWheelsOnTheirAxles(scene: Object3D): void {
 }
 
 const cache = new Map<CarModel, Object3D>()
+/** One repainted atlas per model, built once at load and shared by every clone. */
+const atlases = new Map<CarModel, CanvasTexture>()
 let settled = false
+
+/** The atlas is the only mapped texture on these models; the light units carry no map. */
+function atlasOf(scene: Object3D): Texture | null {
+  let found: Texture | null = null
+  scene.traverse((node) => {
+    if (found !== null || !(node instanceof Mesh)) return
+    const material = node.material
+    if (material instanceof MeshStandardMaterial && material.map !== null) found = material.map
+  })
+  return found
+}
 
 /**
  * Fetch every car model once.
@@ -168,6 +192,12 @@ export async function loadCarModels(): Promise<void> {
       try {
         const gltf = await loader.loadAsync(`models/${name}.gltf`)
         seatWheelsOnTheirAxles(gltf.scene)
+        const source = atlasOf(gltf.scene)
+        const paint = CAR_PAINT[name]
+        if (source !== null && paint !== undefined) {
+          const painted = repaint(source, paint)
+          if (painted !== null) atlases.set(name, painted)
+        }
         cache.set(name, gltf.scene)
       } catch {
         // A model that will not load costs you that car's looks, not the game.
@@ -181,7 +211,7 @@ export async function loadCarModels(): Promise<void> {
 export function carFor(livery: number, tuning: VehicleTuning): LoadedCar | null {
   const name = CAR_MODELS[livery % CAR_MODELS.length]!
   const source = cache.get(name)
-  return source === undefined ? null : normalise(source, tuning, livery)
+  return source === undefined ? null : normalise(source, tuning, atlases.get(name) ?? null)
 }
 
 /**

@@ -21,7 +21,7 @@ export type Rgb = readonly [number, number, number]
  * the radar draws a blip per car and has to agree with the paint on the car, and
  * a second copy of these four numbers is a second copy that can drift.
  */
-export const LIVERIES = [0xd8452f, 0x3f8ecc, 0x6bbf59, 0xc9a227] as const
+export const LIVERIES = [0xd8452f, 0x3f8ecc, 0x4f9c46, 0xc9a227] as const
 
 /** A car's paint as a CSS colour, for the DOM overlay and the radar. */
 export function liveryCss(id: number): string {
