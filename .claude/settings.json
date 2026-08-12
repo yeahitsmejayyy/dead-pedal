@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Read(//Users/yeahitsmejayyy/jayyy-os/**)",
-      "Bash(npm run *)"
-    ]
-  }
-}
