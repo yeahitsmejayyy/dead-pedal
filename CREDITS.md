@@ -2,6 +2,20 @@
 
 All game code is original.
 
+## Models
+
+The four vehicles in `public/models/` come from the Quaternius "Zombie Apocalypse Kit", released
+under **CC0**. The licence is kept at [docs/QUATERNIUS-License.txt](docs/QUATERNIUS-License.txt).
+
+CC0 carries no attribution obligation. It is recorded anyway, because a public repo should be able
+to answer "where did this come from" without anyone having to ask. One oddity worth writing down:
+the licence file bundled with the download is headed *Ultimate Platformer Pack*, which is a
+copy-paste slip in Quaternius's own packaging. The terms are the same CC0 text and the kit is listed
+as CC0 on their site.
+
+The models are not shipped as authored. The game rewrites the shared texture atlas per car at load
+time so bodywork, armour and trim can be coloured independently — see `src/view/carPaint.ts`.
+
 ## Audio
 
 Every sound effect and engine loop in `public/audio/` was generated with ElevenLabs Sound Effects

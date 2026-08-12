@@ -1,7 +1,7 @@
 /**
  * L3 — the vehicle models, loaded and normalised.
  *
- * Quaternius "Zombie Apocalypse Kit", CC0 (see `_models/QUATERNIUS-License.txt`).
+ * Quaternius "Zombie Apocalypse Kit", CC0 (see `docs/QUATERNIUS-License.txt`).
  * Four vehicles rather than one recoloured four times, because the thing that
  * makes a car a character is its silhouette: you have to know which one just
  * rammed you from a chase camera, and four identical shapes in four colours

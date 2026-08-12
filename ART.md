@@ -962,7 +962,7 @@ the committed copy is a backup and a source of truth, not the live asset.
 
 | Path | What goes there | Why |
 |---|---|---|
-| `_art/` | 4K and 2K masters, SVG and PSD working files, `grunge-map.png` | Matches the existing `_models/` and `_sounds/` convention: source material, outside the build, never served |
+| `_art/` | 4K and 2K masters, SVG and PSD working files, `grunge-map.png` | Matches the existing `_models/` and `_sounds/` convention: source material, outside the build, never served. **Gitignored** — every top-level `_*/` directory is a local working folder, so masters live on your disk and only the outputs are tracked |
 | `public/art/` | Only what the running game loads: `menu-backdrop.webp`, `car-0-red.webp` … `car-3-gold.webp`, `wordmark.webp` | Vite copies `public/` verbatim into `dist/`, so anything here ships to the demo |
 | `docs/art/` | `key-art.png`, `arena.png`, `social-card.png`, `wordmark.png`, `favicon-32.png`, `favicon.svg` | README and GitHub only. Keeping them out of `public/` keeps them out of `dist/` |
 
