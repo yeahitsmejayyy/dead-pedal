@@ -164,7 +164,7 @@ test.describe('M1–M5 — driving, contact, weapons, lock-on and bots', () => {
     // Silent: no AudioContext is constructed at all. Headless Chromium ignores
     // the autoplay policy, so without this every test would bake the buffers
     // and hold a render thread for a path no assertion here observes.
-    await page.goto('/?silent=1')
+    await page.goto('/?silent=1&nomenu=1')
     await page.waitForFunction(() => '__deadPedal' in window)
     // Let the loop settle, then wait out the countdown. Nothing below this line
     // can drive, shoot or steer until the round is live.

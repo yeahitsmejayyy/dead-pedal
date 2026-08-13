@@ -28,6 +28,7 @@ import { DEFAULT_CAMERA } from './view/camera'
 import { Renderer } from './view/renderer'
 import { createDebugPanel } from './ui/debug'
 import { createHud, type HudBlip, type HudLock } from './ui/hud'
+import { createTitle } from './ui/title'
 import { createAudio } from './audio'
 
 const PLAYER = 0
@@ -115,6 +116,52 @@ const audio = createAudio({ silent: new URLSearchParams(location.search).has('si
 for (const kind of ['keydown', 'pointerdown'] as const) {
   window.addEventListener(kind, () => audio.arm(), { passive: true })
 }
+
+/**
+ * Menu music, requested at boot and audible whenever the browser allows it.
+ *
+ * A page that has had no user gesture cannot start an AudioContext — that is
+ * policy, not a bug, and no amount of wanting it changes the answer. So this
+ * asks immediately and accepts being deferred: the fetch and decode happen now,
+ * the source starts now, and if the context is suspended it simply produces no
+ * sound until the first click or keypress resumes it. On a page the player has
+ * touched before, it plays on load. Otherwise it comes in on the gesture that
+ * was going to press START anyway.
+ */
+audio.arm()
+audio.startMusic()
+/**
+ * The title screen, and the two reasons the sim does not run behind it.
+ *
+ * First, honesty: a countdown running while nobody has pressed anything means
+ * the match you eventually play is not the match that started. Second, the
+ * player's car would be sitting in the arena being shot at.
+ *
+ * `?nomenu=1` boots straight into the match. The e2e suite uses it — 28 of those
+ * tests are about driving, weapons and rendering, and making each one click
+ * through a menu tests the menu 28 times and nothing else. One test covers the
+ * title path properly, which is where a broken START button should be caught.
+ */
+let started = new URLSearchParams(location.search).has('nomenu')
+
+const titleRoot = document.getElementById('title')
+if (titleRoot === null) throw new Error('missing #title')
+const title = createTitle(titleRoot, {
+  onHover: () => audio.playUi('menuHover'),
+  // Fires the instant START is pressed, while the outro runs. The engine note
+  // is the transition's clock, so it has to begin now, not when it ends.
+  onCommit: () => {
+    audio.arm()
+    audio.playUi('menuStart')
+  },
+  onStart: () => {
+    started = true
+    document.body.classList.remove('is-title')
+  },
+})
+if (started) title.hide()
+else document.body.classList.add('is-title')
+
 /**
  * Paused, by the player.
  *
@@ -126,6 +173,9 @@ for (const kind of ['keydown', 'pointerdown'] as const) {
 let paused = false
 
 window.addEventListener('keydown', (event) => {
+  // The menu owns the keyboard while it is up. Pausing a game that has not
+  // begun leaves you on a paused title screen with no way to read that state.
+  if (!started) return
   if (event.code === 'KeyP') {
     paused = !paused
     audio.setPaused(paused)
@@ -270,13 +320,14 @@ function frame(now: number): void {
   // inside the guard so a shot fired on the buzzer cannot skip the scoreboard.
   if (input.takeReset()) {
     const guarded = resultAt !== null && now - resultAt < RESULT_GUARD * 1000
-    if (!guarded) reset()
+    if (!guarded && started) reset()
   }
 
-  // Everything below this line is skipped while paused: no ticks, no match
-  // clock, no bots, no projectiles. The scene still renders, so you are looking
-  // at a held frame rather than a black screen.
-  const { clock: nextClock, steps } = paused
+  // Everything below this line is skipped while paused OR while the title is
+  // up: no ticks, no match clock, no bots, no projectiles. The scene still
+  // renders, so you are looking at a held frame rather than a black screen.
+  const frozen = paused || !started
+  const { clock: nextClock, steps } = frozen
     ? { clock, steps: 0 }
     : advance(clock, elapsed)
   clock = nextClock

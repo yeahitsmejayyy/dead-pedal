@@ -61,6 +61,18 @@ Three more rules that hold across all of these:
 `mine-tick` repeats on a slow pulse the whole time the mine sits on the floor, so keep it small and
 unobtrusive — it will be heard hundreds of times.
 
+### The two menu sounds have constraints the rest do not
+
+`menu-hover` fires on every pointer entry, including accidental grazes on the way to somewhere
+else. It has to be tiny, dry and quiet, and it is debounced in code so a jittery mouse cannot
+machine-gun it. Anything with a ring or a tail becomes unbearable inside a minute.
+
+`menu-start` is **2.0 seconds because the outro is 2.0 seconds**. It is not a stinger played over a
+transition; it is the transition's clock. The starter grinds while the logo pulls away, the engine
+catches as the zoom accelerates, and the idle carries the last of the fade. If either the sound or
+the animation changes length, the other one changes with it — a 2s sound over a 0.8s animation
+reads as two bugs rather than one mismatch.
+
 ## Feedback and interface
 
 | File | ×  | Length | Trigger | Prompt |
@@ -70,6 +82,8 @@ unobtrusive — it will be heard hundreds of times.
 | `lock-off` | 1 | 0.2 s | Lock breaks | Missile lock breaking, short descending two-note electronic tone, targeting system disengaging, dry and flat |
 | `go` | 1 | 0.4 s | Countdown hits zero | Motorsport race start signal, sustained higher-pitched electronic tone as the starting lights go green, clean and bright |
 | `horn` | 1 | 1.5 s | Match ends | End of match signal, descending two-tone electronic horn like a sports arena buzzer, flat and final, not a whistle |
+| `menu-hover` | 1 | 0.08 s | Pointer enters the START button | Single small metallic detent click from a heavy toggle switch on a steel panel, one crisp tick of sprung metal seating into its notch, recorded very close in a dead room, extremely short with an abrupt cutoff, no ring and no tail, quiet and understated |
+| `menu-start` | 1 | 2.0 s | START is pressed; runs under the outro | Cold V8 muscle car engine starting, recorded outside the car close to the front wing. A worn starter motor grinds and drags for about one second, the engine catches with a hard uneven bark, then settles into a rough lopey idle for the last half second. Heavy and slightly reluctant, like a tired engine that has been sitting. No exhaust rev after the catch and no fade — it ends on the idle |
 | `respawn` | 1 | 0.6 s | A car comes back | Vehicle materialising back into play, quick mechanical whoosh with an electrical power-up surge underneath, short and forward-moving |
 
 ## Currently silent
@@ -160,6 +174,7 @@ Your ears decide.
 - [ ] `mine-arm`, `mine-tick`
 - [ ] `pickup`, `lock-on`, `lock-off`
 - [ ] `go`, `horn`, `respawn`
+- [x] `menu-hover` (3 variants), `menu-start`
 - [ ] `land-1`, `land-2`
 - [ ] `dmg-1`, `dmg-2`
 

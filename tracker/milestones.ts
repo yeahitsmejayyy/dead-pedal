@@ -222,13 +222,80 @@ export const MILESTONES: readonly Milestone[] = [
   },
   {
     id: 'M8',
+    title: 'Front end',
+    doneWhen: 'Someone who has never seen this can open the page, pick a car and be driving, without being told anything.',
+    tasks: [
+      {
+        id: 'm8-title',
+        label: 'Title screen on boot, with START as the only action',
+        done: true,
+        note: 'START is also the gesture that unlocks WebAudio, so the engine is audible from the first frame of the countdown instead of from whenever you first touch a key. `?nomenu=1` skips it for the e2e suite.',
+      },
+      {
+        id: 'm8-outro',
+        label: 'START plays an outro instead of cutting to the arena',
+        done: true,
+        note: 'Two seconds, choreographed against `menu-start` which is cut to the same length — the sound is the transition\'s clock, not a stinger over it. Beats: 0.0s the button flattens and its glow blows out; 0.0-0.6s the tagline, hint and button fade and drop away; 0.2-1.2s the logo scales up past the frame and fades, breaking the breathe loop from wherever it happens to be; 0.6-2.0s the whole screen scales in and fades to black over the arena, which is already rendering behind it; 2.0s the overlay is gone and the countdown begins. The sim must stay frozen for the whole outro — the match starts when the screen clears, not when the button is pressed.',
+      },
+      {
+        id: 'm8-menu-sfx',
+        label: 'Menu hover and confirm sounds',
+        done: true,
+        note: 'Three hover variants cut from one generated take, loudness-matched from a 24.2 dB raw spread to -3.0 dB — unmatched variants rotate as a volume wobble rather than as variety. Debounced at 140ms on top of the mixer\'s own repeat guard, which is tuned for simultaneous sim events and far too short for a menu.',
+      },
+      {
+        id: 'm8-flow',
+        label: 'Screen state machine: title → select → match → result → back',
+        done: false,
+        note: 'The match already models a countdown and a result board. This wraps that; it does not duplicate it.',
+      },
+      {
+        id: 'm8-select',
+        label: 'Vehicle select: four cars, chosen car launches the match',
+        done: false,
+      },
+      {
+        id: 'm8-select-live',
+        label: 'The car on the select screen is the LIVE model, not a painting',
+        done: false,
+        note: 'carFor() already builds it and refsheet already poses it off-screen. A painted car would drift from the real one the first time the paint changes, and the paint has changed twice already.',
+      },
+      {
+        id: 'm8-menu-input',
+        label: 'Menus driven by keyboard, mouse and gamepad',
+        done: false,
+        note: 'The gamepad is already read every frame for driving. A menu it cannot operate is a menu you have to put the pad down for.',
+      },
+      {
+        id: 'm8-art-title',
+        label: 'Title backdrop, in the cover style',
+        done: true,
+        note: 'public/gfx/start-menu.png. Generated from the cover as a style reference, with no lettering baked in so the wordmark stays a separate layer.',
+      },
+      {
+        id: 'm8-art-select',
+        label: 'Vehicle select backdrop, with an empty stage for the live car',
+        done: false,
+        note: 'The stage has to hold the box truck, not just a coupe.',
+      },
+      {
+        id: 'm8-logo',
+        label: 'Wordmark as its own layered asset',
+        done: false,
+        note: 'Currently it exists only baked into cover.png, at one size, in one composition.',
+      },
+    ],
+  },
+
+  {
+    id: 'M9',
     title: 'Multiplayer',
     doneWhen: 'Four people in four cities finish a match and want another.',
     tasks: [
-      { id: 'm8-server', label: 'Authoritative server running the same sim package', done: false },
-      { id: 'm8-predict', label: 'Client-side prediction and input replay', done: false },
-      { id: 'm8-interp', label: 'Remote vehicles interpolated ~100ms in the past', done: false },
-      { id: 'm8-lobby', label: 'Lobby and room codes', done: false },
+      { id: 'm9-server', label: 'Authoritative server running the same sim package', done: false },
+      { id: 'm9-predict', label: 'Client-side prediction and input replay', done: false },
+      { id: 'm9-interp', label: 'Remote vehicles interpolated ~100ms in the past', done: false },
+      { id: 'm9-lobby', label: 'Lobby and room codes', done: false },
     ],
   },
 ]

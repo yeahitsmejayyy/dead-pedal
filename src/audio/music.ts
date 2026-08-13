@@ -57,6 +57,22 @@ export class Music {
     return track
   }
 
+  /**
+   * Start a specific track, rather than advancing to the next one.
+   *
+   * `cycle` is for the M key, where "next" is the whole interaction. The menu
+   * needs to ask for a particular track, and needs asking twice to be harmless
+   * — a re-entrant call while the same track is already up would otherwise stop
+   * it and cross-fade it into itself.
+   */
+  select(index: number): Track | null {
+    const wanted = TRACKS[index] ?? null
+    if (wanted === null || this.current() === wanted) return this.current()
+    this.index = index
+    void this.play(wanted)
+    return wanted
+  }
+
   private stop(): void {
     if (this.voice === null || this.source === null) return
     const now = this.ctx.currentTime

@@ -271,12 +271,394 @@
       /* `#keys` moves right to clear the dial: 16 + 192 + 16. */
       #keys { left: 224px; }
 
+
+      /* ── title screen ────────────────────────────────────────────────── */
+      /* Sits over everything including the debug panel: while it is up, it owns
+         the screen. Hidden by default so a `?nomenu=1` boot never flashes it. */
+      #title {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: none;
+        place-items: center;
+        isolation: isolate;
+        /* Fallback, and it has to look deliberate: the backdrop art is a
+           separate file that may not exist yet, and a 404 must degrade to
+           something on-brand rather than to a white page. Burnt sky over night
+           black, which is the cover's own value structure. */
+        background: radial-gradient(125% 90% at 50% 0%, #7a2d10 0%, #2a1208 44%, #0b0d10 100%);
+      }
+      #title.is-shown { display: grid; }
+      /* The art, on its own layer so the gradient above shows through when the
+         file is missing. `cover` crops rather than letterboxes, which is why the
+         art is generated with a safe area. */
+      #title::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: -2;
+        background: url('gfx/start-menu.png') center / cover no-repeat;
+      }
+      /* Legibility scrim. Menu text sits over whatever the generator produced,
+         and "whatever it produced" is not a contrast guarantee. */
+      #title::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        /* Two layers. The radial buys local contrast directly behind the plate,
+           which is where the art is busiest — the tagline sits over a fence line
+           and was unreadable on the first pass. The linear keeps the bottom edge
+           dark so the button and hint stay solid however the image is cropped. */
+        background:
+          radial-gradient(58% 42% at 50% 56%, rgba(7, 9, 12, 0.72) 0%, rgba(7, 9, 12, 0.34) 55%, rgba(7, 9, 12, 0) 100%),
+          linear-gradient(to bottom, rgba(7, 9, 12, 0.42) 0%, rgba(7, 9, 12, 0.16) 30%, rgba(7, 9, 12, 0.55) 74%, rgba(7, 9, 12, 0.9) 100%);
+      }
+
+      .title-plate {
+        display: grid;
+        justify-items: center;
+        gap: 0;
+        padding: 0 24px;
+        text-align: center;
+      }
+
+      /* ── the outro ────────────────────────────────────────────────────
+         Two seconds, cut against `menu-start.ogg`. The starter grinds while the
+         plate clears, the engine catches as the zoom accelerates, and the idle
+         carries the last of the fade.
+
+         Every layer uses `forwards` so nothing snaps back to its start pose in
+         the frame between the animation ending and the overlay being hidden. */
+      #title.is-leaving { pointer-events: none; }
+
+      /* The whole screen pulls in and dissolves, revealing the arena that has
+         been rendering behind this the entire time. Late start: the plate has
+         to clear first or the zoom just drags the UI along with it. */
+      #title.is-leaving {
+        animation: title-out 2s cubic-bezier(0.4, 0, 0.85, 0.35) forwards;
+      }
+      @keyframes title-out {
+        0%, 30%  { transform: scale(1); opacity: 1; }
+        100%     { transform: scale(1.22); opacity: 0; }
+      }
+
+      /* Tagline, button and hint drop away first, staggered so they read as a
+         sequence rather than one block leaving. */
+      #title.is-leaving .title-tagline { animation: title-drop 0.42s ease-in forwards; }
+      #title.is-leaving .title-start   { animation: title-drop 0.42s ease-in 0.06s forwards; }
+      #title.is-leaving .title-hint    { animation: title-drop 0.42s ease-in 0.12s forwards; }
+      @keyframes title-drop {
+        to { opacity: 0; transform: translateY(14px); }
+      }
+
+      /* The button flattens and blows its glow out on the way. */
+      #title.is-leaving .title-start {
+        background: linear-gradient(180deg, #ffd9a8 0%, #ffb055 100%);
+        color: #1a0f06;
+        box-shadow: inset 0 0 0 2px #ffd9a8, 0 0 46px rgba(255, 170, 60, 0.75);
+      }
+
+      /* The wordmark scales past the frame. `--mark-from` is written by
+         title.ts from the live computed transform, so the pull-away continues
+         from wherever the breathe loop was rather than snapping to 1. */
+      #title.is-leaving .title-markwrap {
+        animation: title-mark-out 1s cubic-bezier(0.35, 0, 0.7, 0.25) 0.2s forwards;
+      }
+      /* No glint mid-exit. */
+      #title.is-leaving .title-markwrap::after { animation: none; opacity: 0; }
+      @keyframes title-mark-out {
+        from { transform: scale(var(--mark-from, 1)); opacity: 1; }
+        to   { transform: scale(1.55); opacity: 0; }
+      }
+
+      /* The fires keep burning while everything else leaves. */
+      #title.is-leaving .title-embers { animation: title-embers-out 1.4s ease-in 0.4s forwards; }
+      @keyframes title-embers-out { to { opacity: 0; } }
+
+      @media (prefers-reduced-motion: reduce) {
+        #title.is-leaving,
+        #title.is-leaving .title-markwrap,
+        #title.is-leaving .title-tagline,
+        #title.is-leaving .title-start,
+        #title.is-leaving .title-hint,
+        #title.is-leaving .title-embers { animation: none; }
+      }
+
+      /* ── the city is on fire ──────────────────────────────────────────
+         Three soft warm pools sitting over the skyline, roughly where the
+         backdrop's smoke columns rise from, so the light has a source in the
+         picture rather than floating. `screen` blending adds light instead of
+         painting a peach disc over the art.
+
+         They live between the artwork and the legibility scrim on purpose: the
+         scrim knocks them back slightly, which is what stops them competing
+         with the wordmark. Radial gradients rather than a blur filter — same
+         falloff, and no per-frame blur on a full-screen layer. */
+      .title-embers {
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      .title-ember {
+        position: absolute;
+        border-radius: 50%;
+        mix-blend-mode: screen;
+        background: radial-gradient(
+          circle,
+          rgba(255, 162, 54, 0.62) 0%,
+          rgba(255, 108, 24, 0.28) 44%,
+          rgba(255, 70, 0, 0) 74%
+        );
+        animation: title-ember 9s ease-in-out infinite alternate;
+        will-change: opacity, transform;
+      }
+      /* Staggered and prime-ish durations so the three never pulse together,
+         which is what would make it read as a CSS animation. */
+      .title-ember--a { left: 12%; top: 22%; width: 38vw; height: 38vw; animation-duration: 8.5s; }
+      .title-ember--b { left: 44%; top: 17%; width: 30vw; height: 30vw; animation-duration: 11.5s; animation-delay: -3.2s; }
+      .title-ember--c { left: 70%; top: 24%; width: 34vw; height: 34vw; animation-duration: 14s; animation-delay: -6.7s; }
+
+      @keyframes title-ember {
+        from { opacity: 0.32; transform: scale(0.94); }
+        to   { opacity: 0.78; transform: scale(1.12); }
+      }
+
+      /* ── distant shelling ─────────────────────────────────────────────
+         Flashes along the skyline. Mostly nothing: each one is dark for ~92% of
+         its cycle, then pops. The double-tap at 93% and 97% is the point — a
+         single clean fade reads as a blinking div, whereas a hard flash with a
+         dimmer secondary behind it reads as a detonation and its echo.
+
+         Three of them on 9s, 13s and 17s with negative delays. Coprime-ish
+         durations mean the pattern does not visibly repeat, which is the whole
+         job: the moment two flashes fire together twice, the eye catches the
+         loop. */
+      .title-flash {
+        position: absolute;
+        border-radius: 50%;
+        opacity: 0;
+        mix-blend-mode: screen;
+        background: radial-gradient(
+          circle,
+          rgba(255, 240, 210, 0.95) 0%,
+          rgba(255, 170, 60, 0.55) 28%,
+          rgba(255, 90, 10, 0) 68%
+        );
+        animation: title-flash 9s linear infinite;
+        will-change: opacity, transform;
+      }
+      .title-flash--a { left: 15%; top: 30%; width: 9vw; height: 9vw; }
+      .title-flash--b { left: 56%; top: 26%; width: 7vw; height: 7vw; animation-duration: 13s; animation-delay: -4.5s; }
+      .title-flash--c { left: 78%; top: 32%; width: 8vw; height: 8vw; animation-duration: 17s; animation-delay: -11s; }
+
+      @keyframes title-flash {
+        0%, 92%   { opacity: 0; transform: scale(0.85); }
+        93%       { opacity: 0.95; transform: scale(1); }
+        95%       { opacity: 0.22; transform: scale(1.06); }
+        97%       { opacity: 0.6; transform: scale(1.03); }
+        100%      { opacity: 0; transform: scale(1.14); }
+      }
+
+      /* Smoke, rising off the same skyline. Dark rather than light: the sky
+         behind is the brightest thing in the picture, so smoke reads by
+         occluding it. Long, slow and low-opacity — this is meant to be noticed
+         only if you stop and look for it. */
+      .title-smoke {
+        position: absolute;
+        border-radius: 50%;
+        opacity: 0;
+        background: radial-gradient(circle, rgba(24, 18, 15, 0.6) 0%, rgba(24, 18, 15, 0.28) 45%, rgba(24, 18, 15, 0) 72%);
+        animation: title-smoke 17s linear infinite;
+        will-change: opacity, transform;
+      }
+      .title-smoke--a { left: 20%; top: 26%; width: 16vw; height: 16vw; }
+      .title-smoke--b { left: 62%; top: 22%; width: 13vw; height: 13vw; animation-duration: 23s; animation-delay: -9s; }
+
+      @keyframes title-smoke {
+        0%   { opacity: 0; transform: translateY(18px) scale(0.82); }
+        22%  { opacity: 0.3; }
+        70%  { opacity: 0.18; }
+        100% { opacity: 0; transform: translateY(-110px) scale(1.55); }
+      }
+
+      /* The wordmark breathes on a 3s cycle. Amplitude stays at 2.8%: speed was
+         what was missing both times it got tuned, and scaling a 660px logo any
+         harder starts softening its edges on a non-integer scale factor. */
+      @keyframes title-breathe {
+        0%, 100% { transform: scale(1); }
+        50%      { transform: scale(1.028); }
+      }
+
+      /* Anything that moves, stops. A slowly pulsing full-screen glow is exactly
+         what this setting exists for. */
+      @media (prefers-reduced-motion: reduce) {
+        .title-ember { animation: none; opacity: 0.5; }
+        .title-flash { animation: none; opacity: 0; }
+        .title-smoke { animation: none; opacity: 0.12; }
+        .title-markwrap { animation: none; }
+        .title-markwrap::after { animation: none; opacity: 0; }
+      }
+
+      /* The wordmark, as artwork.
+         `width` and `height` are on the tag as well as in CSS so the browser
+         reserves the right box before the 786KB PNG arrives — otherwise the
+         tagline and button jump down the moment it loads, which is the first
+         thing anyone sees. The art carries its own dark keyline and glow, so the
+         only shadow here is a soft one for separation from the sky. */
+      /* The wrapper carries the scale and hosts the shine; the img is only
+         pixels. They have to be separate elements: the shine is masked to the
+         logo's own alpha, and a mask on a transformed element would be dragged
+         around by that transform. */
+      .title-markwrap {
+        position: relative;
+        display: block;
+        width: min(74vw, 660px);
+        animation: title-breathe 3s ease-in-out infinite;
+        will-change: transform;
+      }
+      .title-mark {
+        display: block;
+        width: 100%;
+        height: auto;
+        filter: drop-shadow(0 6px 22px rgba(0, 0, 0, 0.72));
+      }
+
+      /* A glint travelling across the metal, roughly every eight seconds.
+         MASKED TO THE LOGO'S ALPHA, which is the whole trick — unmasked, the
+         highlight sweeps the transparent gaps between the letters too and reads
+         as a pale rectangle passing over the screen rather than as light
+         catching a raised edge.
+         The gradient's background-position animates while the element itself
+         stays put. Translating the element would drag the mask with it and
+         nothing would appear to move at all.
+
+         Alpha is 0.58, not the 0.85 it started at. Pinned at peak, the higher
+         value blew out the gas mask — and that mask is the centre of the brand,
+         so a glint that erases it for a moment is a glint doing harm. */
+      .title-markwrap::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0;
+        background: linear-gradient(
+          105deg,
+          rgba(255, 244, 220, 0) 42%,
+          rgba(255, 244, 220, 0.58) 50%,
+          rgba(255, 244, 220, 0) 58%
+        );
+        background-size: 300% 100%;
+        background-repeat: no-repeat;
+        -webkit-mask: url('brand/dead-pedal-logo.png') center / contain no-repeat;
+        mask: url('brand/dead-pedal-logo.png') center / contain no-repeat;
+        mix-blend-mode: screen;
+        animation: title-shine 8s ease-in-out infinite;
+      }
+      /* Dark for most of the cycle, then one pass. The sweep occupies the last
+         18% of the loop, so it reads as an occasional event rather than as a
+         thing that is always happening. */
+      @keyframes title-shine {
+        0%, 82%  { background-position: 130% 0; opacity: 0; }
+        84%      { opacity: 1; }
+        98%      { background-position: -30% 0; opacity: 1; }
+        100%     { background-position: -30% 0; opacity: 0; }
+      }
+
+      .title-tagline {
+        margin: 18px 0 0;
+        font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: 0.34em;
+        text-transform: uppercase;
+        color: #aab4c0;
+        text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
+      }
+
+      /* START, as a cut steel plate rather than a rounded rectangle.
+         Three things carry the brand, and none of them is decoration:
+
+         The CORNERS are chamfered with clip-path, not rounded. A radius reads as
+         software; a 45-degree cut reads as something sheared off a sheet. It is
+         also the one change that stops this looking like every other button on
+         the internet, which was the actual complaint.
+
+         The EDGE is boost orange #ff8c1a — the same hex the ramp chevrons use in
+         the arena and the same warm the wordmark glows with. The palette is
+         already decided; the button just joins it.
+
+         The FACE is dark and the fill only arrives on hover. A menu with one
+         action does not need to shout at rest, and it gives the hover somewhere
+         to go. */
+      .title-start {
+        position: relative;
+        margin-top: 30px;
+        padding: 16px 58px;
+        font: 15px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-weight: 700;
+        letter-spacing: 0.42em;
+        text-indent: 0.42em;
+        color: #ffd9a8;
+        background:
+          linear-gradient(180deg, rgba(255, 140, 26, 0.16) 0%, rgba(255, 140, 26, 0.04) 46%, rgba(0, 0, 0, 0.3) 100%),
+          linear-gradient(180deg, #2b2019 0%, #171210 100%);
+        border: 0;
+        border-radius: 0;
+        cursor: pointer;
+        clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+        /* The border has to be drawn, not declared: `border` would square off
+           the corners the clip-path just cut. An inset ring follows the clip. */
+        box-shadow:
+          inset 0 0 0 2px #ff8c1a,
+          inset 0 1px 0 rgba(255, 214, 160, 0.35),
+          0 0 22px rgba(255, 140, 26, 0.22);
+        text-shadow: 0 0 14px rgba(255, 140, 26, 0.55);
+        transition:
+          color 140ms linear,
+          background 140ms linear,
+          box-shadow 140ms linear,
+          transform 70ms linear;
+      }
+      .title-start:hover {
+        color: #1a0f06;
+        background: linear-gradient(180deg, #ffb055 0%, #ff8c1a 55%, #e0700c 100%);
+        box-shadow:
+          inset 0 0 0 2px #ffd9a8,
+          inset 0 1px 0 rgba(255, 255, 255, 0.45),
+          0 0 34px rgba(255, 140, 26, 0.5);
+        text-shadow: none;
+      }
+      .title-start:active { transform: translateY(2px); }
+      /* Chamfered corners make an outline ring look wrong, so focus reuses the
+         hover treatment plus a wider halo — visible without fighting the shape. */
+      .title-start:focus-visible {
+        outline: none;
+        box-shadow:
+          inset 0 0 0 2px #ffd9a8,
+          0 0 0 3px rgba(255, 140, 26, 0.4),
+          0 0 34px rgba(255, 140, 26, 0.45);
+      }
+
+      .title-hint {
+        margin: 16px 0 0;
+        font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: 0.2em;
+        color: #8b95a3;
+      }
+      .title-hint b { color: #d8dee6; font-weight: 600; }
+
+      /* The key legend and the HUD belong to the match, not to the menu. */
+      body.is-title #hud,
+      body.is-title #keys { display: none; }
+
       .tp-dfwv { z-index: 10; }
     </style>
   </head>
   <body>
     <canvas id="scene"></canvas>
     <div id="hud"></div>
+    <div id="title"></div>
     <div id="keys">
       <div><b>W&nbsp;S</b> throttle / brake &nbsp;·&nbsp; <b>A&nbsp;D</b> steer</div>
       <div><b>Space</b> handbrake &nbsp;·&nbsp; <b>C</b> look back &nbsp;·&nbsp; <b>R</b> reset &nbsp;·&nbsp; <b>M</b> music &nbsp;·&nbsp; <b>N</b> mute &nbsp;·&nbsp; <b>P</b> pause &nbsp;·&nbsp; <b>E</b> engine</div>

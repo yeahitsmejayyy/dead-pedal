@@ -122,7 +122,7 @@ async function runFrames(page: Page, frames: number): Promise<void> {
 test.describe('M7 — the same seed draws the same frame', () => {
   test.beforeEach(async ({ page }) => {
     await pinTime(page)
-    await page.goto('/?silent=1')
+    await page.goto('/?silent=1&nomenu=1')
     await page.waitForFunction(() => '__deadPedal' in window)
     // Car models load over the network on REAL time, while the frames below run
     // on a clock this test drives by hand. Without waiting, whether the shot

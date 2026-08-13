@@ -46,7 +46,17 @@ export type Audio = {
   /** Swap between the sampled loops and the oscillator bank. Returns true if sampled. */
   toggleEngine(): boolean
   /** Next track, or off. Returns what is now playing, or null for silence. */
+  /**
+   * Play a menu sound directly.
+   *
+   * Everything else reaches the mixer through `consume`, which reads sim
+   * events — but a menu is not the sim, and inventing a fake event so a button
+   * can click would put UI concerns inside the world state.
+   */
+  playUi(id: 'menuHover' | 'menuStart'): void
   cycleMusic(): string | null
+  /** Start the menu track. Safe to call repeatedly. */
+  startMusic(): string | null
   state(): { engine: string; voices: number; loaded: string; music: string }
 }
 
@@ -68,6 +78,8 @@ type SoundId =
   | 'respawn'
   | 'land'
   | 'damage'
+  | 'menuHover'
+  | 'menuStart'
 
 /** Which bus a sound belongs to. The buses are the mix. */
 type Bus = 'weapons' | 'impacts' | 'ui'
@@ -119,6 +131,19 @@ const SOUNDS: Readonly<Record<SoundId, Spec>> = {
   mineArm: { files: ['mine-arm'], bus: 'ui', level: 0.8, priority: 2 },
   mineBeep: { files: ['mine-tick'], bus: 'ui', level: 0.45, priority: 1 },
   pickup: { files: ['pickup'], bus: 'ui', level: 0.8, priority: 2 },
+  /**
+   * Three variants because a hover is retriggered constantly — the pointer
+   * crosses the button on the way to anywhere. The raw takes spanned 24.2 dB
+   * peak to peak and were matched to -3.0 dB before encoding; unmatched
+   * variants rotate as a volume wobble rather than as variety, which is the
+   * same lesson the gun learned.
+   *
+   * Lowest priority in the map. A menu tick is the first thing that should be
+   * dropped if anything else wants a voice.
+   */
+  menuHover: { files: ['menu-hover-1', 'menu-hover-2', 'menu-hover-3'], bus: 'ui', level: 0.42, priority: 1 },
+  /** Two seconds, and the outro is choreographed to it. See `ui/title.ts`. */
+  menuStart: { files: ['menu-start'], bus: 'ui', level: 0.95, priority: 6 },
   lockOn: { files: ['lock-on'], bus: 'ui', level: 0.5, priority: 2 },
   lockLost: { files: ['lock-off'], bus: 'ui', level: 0.5, priority: 2 },
   countdownGo: { files: ['go'], bus: 'ui', level: 0.6, priority: 6 },
@@ -152,7 +177,9 @@ const SILENT: Audio = Object.freeze({
   tick: () => {},
   update: () => {},
   toggleEngine: () => false,
+  playUi: () => {},
   cycleMusic: () => null,
+  startMusic: () => null,
   state: () => ({ engine: 'silent', voices: 0, loaded: 'silent', music: 'silent' }),
 })
 
@@ -535,8 +562,14 @@ export function createAudio(options: AudioOptions = {}): Audio {
       }
     },
 
+    playUi(id: 'menuHover' | 'menuStart'): void {
+      play(id, 1, 0)
+    },
     cycleMusic(): string | null {
       return music.cycle()
+    },
+    startMusic(): string | null {
+      return music.select(0)
     },
 
     toggleEngine(): boolean {
