@@ -29,6 +29,8 @@ import { Renderer } from './view/renderer'
 import { createDebugPanel } from './ui/debug'
 import { createHud, type HudBlip, type HudLock } from './ui/hud'
 import { createTitle } from './ui/title'
+import { createSelect } from './ui/select'
+import { playerLivery } from './view/palette'
 import { createAudio } from './audio'
 
 const PLAYER = 0
@@ -146,21 +148,50 @@ let started = new URLSearchParams(location.search).has('nomenu')
 
 const titleRoot = document.getElementById('title')
 if (titleRoot === null) throw new Error('missing #title')
-const title = createTitle(titleRoot, {
+const selectRoot = document.getElementById('select')
+if (selectRoot === null) throw new Error('missing #select')
+
+/**
+ * Pick a car, then launch.
+ *
+ * `onLaunch` is where the match actually begins — the same rule the title
+ * screen follows. The engine note lives HERE rather than on the title button,
+ * because the engine should fire when you enter the arena, not when you open a
+ * menu, and two starter motors inside ten seconds is one too many.
+ */
+const select = createSelect(selectRoot, {
+  archetype: DEFAULT_VEHICLE,
   onHover: () => audio.playUi('menuHover'),
-  // Fires the instant START is pressed, while the outro runs. The engine note
-  // is the transition's clock, so it has to begin now, not when it ends.
-  onCommit: () => {
-    audio.arm()
-    audio.playUi('menuStart')
-  },
-  onStart: () => {
+  onChange: () => audio.playUi('menuHover'),
+  onCommit: () => audio.playUi('menuStart'),
+  onLaunch: () => {
+    // Views bake their livery when they are built, and all four already exist
+    // behind the menus. Without this the choice would never reach the screen.
+    renderer.restyle()
     started = true
-    document.body.classList.remove('is-title')
   },
 })
-if (started) title.hide()
-else document.body.classList.add('is-title')
+
+const title = createTitle(titleRoot, {
+  onHover: () => audio.playUi('menuHover'),
+  onCommit: () => {
+    audio.arm()
+    audio.playUi('menuHover')
+    // Revealed UNDERNEATH the title, before the title has finished leaving.
+    // Showing it afterwards left one frame of bare arena between the two
+    // menus, which read as the map flickering into view and back out.
+    select.show()
+  },
+  onStart: () => {
+    document.body.classList.remove('is-title')
+    select.arm()
+  },
+})
+if (started) {
+  title.hide()
+} else {
+  document.body.classList.add('is-title')
+}
 
 /**
  * Paused, by the player.
@@ -234,6 +265,7 @@ if (import.meta.env.DEV) {
       fov: (): number => renderer.chase.camera.fov,
       particles: () => renderer.effects.particleCounts(),
       wheelSpin: () => renderer.wheelSpin(PLAYER),
+      playerLivery: () => playerLivery(),
       modelsLoaded: (): boolean => renderer.modelsLoaded(),
       audio: () => ({ ...audio.state(), armed: audio.armed(), muted: audio.muted() }),
       // Lets the e2e suite park the opposition. Tests about ramming and

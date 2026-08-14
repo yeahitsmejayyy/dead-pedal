@@ -68,7 +68,15 @@ test.describe('M8 — the title screen', () => {
 
     await page.locator('.title-start').click()
 
+    // START now opens vehicle select, not the arena. The sim stays frozen for
+    // BOTH menus — the match begins when the launch animation clears.
     await expect(page.locator('#title')).toBeHidden()
+    await expect(page.locator('#select')).toBeVisible()
+    await expect(page.locator('#hud')).toBeHidden()
+
+    await page.locator('[data-go]').click()
+
+    await expect(page.locator('#select')).toBeHidden()
     await expect(page.locator('#hud')).toBeVisible()
 
     // Running. Waited on, not timed — see the note at the top of the file.
@@ -76,17 +84,52 @@ test.describe('M8 — the title screen', () => {
     expect(await tickOf(page)).toBeGreaterThan(atBoot)
   })
 
+  test('the chosen car is the one the player drives', async ({ page }) => {
+    await page.goto('/?silent=1')
+    await page.locator('.title-start').click()
+    await expect(page.locator('#select')).toBeVisible()
+
+    // Walk to the box truck and read back what the screen claims.
+    await expect(page.locator('#select')).toHaveClass(/is-armed/)
+    await page.locator('[data-next]').click()
+    await page.locator('[data-next]').click()
+    await expect(page.locator('[data-label]')).toHaveText('TETANUS')
+    await expect(page.locator('[data-kind]')).toHaveText('Armoured box truck')
+
+    await page.locator('[data-go]').click()
+    await expect(page.locator('#select')).toBeHidden()
+    await ticks(page, 30)
+
+    // The player is vehicle 0, and vehicle 0 must now be wearing livery 2 —
+    // the green the card was showing. Read it off the radar, which is the one
+    // place the choice has to survive all the way through to the instruments.
+    const blip = await page.evaluate(
+      () => (window as unknown as { __deadPedal: { playerLivery: () => number } }).__deadPedal.playerLivery(),
+    )
+    expect(blip, 'the radar and the select card must agree').toBe(2)
+  })
+
   test('starts from the keyboard, and only once', async ({ page }) => {
     await page.goto('/?silent=1')
     await expect(page.locator('#title')).toBeVisible()
 
     // Enter reaches the window handler AND, because the button holds focus, the
-    // browser's own click-on-Enter. A naive implementation therefore starts
-    // twice, and the second start rebuilds the world — which is why the real
-    // assertion below is that the tick count never goes BACKWARDS. A restart is
-    // invisible if you only check that the overlay went away.
+    // browser's own click-on-Enter. A naive implementation therefore fires
+    // twice — harmless here, but the same double-fire on the launch button
+    // would rebuild the world mid-transition.
     await page.keyboard.press('Enter')
-    await expect(page.locator('#title')).toBeHidden()
+    await expect(page.locator('#select')).toBeVisible()
+
+    // Wait for the select screen to ARM before pressing anything. It is
+    // revealed under the title while the title is still fading, and it
+    // deliberately ignores input until that finishes — otherwise the same Enter
+    // that dismissed the title carries straight through and launches the match
+    // before the player has seen a car. A first draft of this test pressed
+    // immediately and failed, which is the guard doing its job.
+    await expect(page.locator('#select')).toHaveClass(/is-armed/)
+
+    await page.keyboard.press('Enter')
+    await expect(page.locator('#select')).toBeHidden()
 
     await ticks(page, 30)
     const running = await tickOf(page)

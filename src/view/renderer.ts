@@ -27,6 +27,7 @@ import { Effects } from './effects'
 import { HealthBars } from './healthBars'
 import { VehicleView } from './vehicleView'
 import { loadCarModels, modelsReady } from './carModels'
+import { liveryOf } from './palette'
 
 const GROUND = new MeshStandardMaterial({ color: 0x272d36, roughness: 1 })
 const WALL = new MeshStandardMaterial({ color: 0x2a323c, roughness: 0.8 })
@@ -322,10 +323,24 @@ export class Renderer {
     return this.views.get(id)?.spin() ?? 0
   }
 
+  /**
+   * Drop every cached vehicle view so they rebuild on the next frame.
+   *
+   * Views bake their livery at construction, and the arena is already rendering
+   * behind the menus — so by the time the player picks a car, all four views
+   * exist wearing the default mapping. Without this the choice would not take
+   * effect until something else happened to rebuild them, which is to say
+   * never.
+   */
+  restyle(): void {
+    for (const view of this.views.values()) this.scene.remove(view.root)
+    this.views.clear()
+  }
+
   private viewFor(id: number, archetype: string): VehicleView {
     let view = this.views.get(id)
     if (view === undefined) {
-      view = new VehicleView(tuningFor(archetype), id)
+      view = new VehicleView(tuningFor(archetype), liveryOf(id))
       this.views.set(id, view)
       this.scene.add(view.root)
     }

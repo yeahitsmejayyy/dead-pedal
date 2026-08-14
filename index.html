@@ -278,7 +278,11 @@
       #title {
         position: fixed;
         inset: 0;
-        z-index: 20;
+        /* Above #select, deliberately. The select screen is revealed underneath
+           the title as the title fades, which is what keeps the arena from
+           flashing between the two menus. Equal z-index would let #select win
+           on DOM order and the crossfade would run backwards. */
+        z-index: 21;
         display: none;
         place-items: center;
         isolation: isolate;
@@ -336,7 +340,7 @@
          been rendering behind this the entire time. Late start: the plate has
          to clear first or the zoom just drags the UI along with it. */
       #title.is-leaving {
-        animation: title-out 2s cubic-bezier(0.4, 0, 0.85, 0.35) forwards;
+        animation: title-out 0.9s cubic-bezier(0.4, 0, 0.85, 0.35) forwards;
       }
       @keyframes title-out {
         0%, 30%  { transform: scale(1); opacity: 1; }
@@ -345,9 +349,9 @@
 
       /* Tagline, button and hint drop away first, staggered so they read as a
          sequence rather than one block leaving. */
-      #title.is-leaving .title-tagline { animation: title-drop 0.42s ease-in forwards; }
-      #title.is-leaving .title-start   { animation: title-drop 0.42s ease-in 0.06s forwards; }
-      #title.is-leaving .title-hint    { animation: title-drop 0.42s ease-in 0.12s forwards; }
+      #title.is-leaving .title-tagline { animation: title-drop 0.3s ease-in forwards; }
+      #title.is-leaving .title-start   { animation: title-drop 0.3s ease-in 0.05s forwards; }
+      #title.is-leaving .title-hint    { animation: title-drop 0.3s ease-in 0.1s forwards; }
       @keyframes title-drop {
         to { opacity: 0; transform: translateY(14px); }
       }
@@ -363,7 +367,7 @@
          title.ts from the live computed transform, so the pull-away continues
          from wherever the breathe loop was rather than snapping to 1. */
       #title.is-leaving .title-markwrap {
-        animation: title-mark-out 1s cubic-bezier(0.35, 0, 0.7, 0.25) 0.2s forwards;
+        animation: title-mark-out 0.6s cubic-bezier(0.35, 0, 0.7, 0.25) 0.12s forwards;
       }
       /* No glint mid-exit. */
       #title.is-leaving .title-markwrap::after { animation: none; opacity: 0; }
@@ -373,7 +377,7 @@
       }
 
       /* The fires keep burning while everything else leaves. */
-      #title.is-leaving .title-embers { animation: title-embers-out 1.4s ease-in 0.4s forwards; }
+      #title.is-leaving .title-embers { animation: title-embers-out 0.7s ease-in 0.2s forwards; }
       @keyframes title-embers-out { to { opacity: 0; } }
 
       @media (prefers-reduced-motion: reduce) {
@@ -591,6 +595,7 @@
          The FACE is dark and the fill only arrives on hover. A menu with one
          action does not need to shout at rest, and it gives the hover somewhere
          to go. */
+      .menu-button,
       .title-start {
         position: relative;
         margin-top: 30px;
@@ -620,6 +625,7 @@
           box-shadow 140ms linear,
           transform 70ms linear;
       }
+      .menu-button:hover,
       .title-start:hover {
         color: #1a0f06;
         background: linear-gradient(180deg, #ffb055 0%, #ff8c1a 55%, #e0700c 100%);
@@ -629,9 +635,11 @@
           0 0 34px rgba(255, 140, 26, 0.5);
         text-shadow: none;
       }
+      .menu-button:active,
       .title-start:active { transform: translateY(2px); }
       /* Chamfered corners make an outline ring look wrong, so focus reuses the
          hover treatment plus a wider halo — visible without fighting the shape. */
+      .menu-button:focus-visible,
       .title-start:focus-visible {
         outline: none;
         box-shadow:
@@ -650,7 +658,216 @@
 
       /* The key legend and the HUD belong to the match, not to the menu. */
       body.is-title #hud,
-      body.is-title #keys { display: none; }
+      body.is-title #keys,
+      body.is-select #hud,
+      body.is-select #keys { display: none; }
+
+      /* ── vehicle select ───────────────────────────────────────────────
+         Same shell as the title: painted backdrop, legibility scrim, DOM on
+         top. The one structural difference is the BAY — a hole in the middle of
+         the layout where a live WebGL canvas sits, because the car you are
+         choosing has to be the car you get. */
+      #select {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: none;
+        place-items: center;
+        isolation: isolate;
+        background: radial-gradient(125% 90% at 50% 0%, #6a2a12 0%, #24140b 44%, #0b0d10 100%);
+      }
+      /* Block, not grid. The screen is two anchored things now — the readout at
+         the top and the car standing on the floor at the bottom — rather than
+         one centred column, because the backdrop's garage floor is in the lower
+         third and a centred car hovers above it. */
+      #select.is-shown { display: block; animation: select-in 0.5s ease-out both; }
+      @keyframes select-in {
+        from { opacity: 0; transform: scale(1.04); }
+        to   { opacity: 1; transform: scale(1); }
+      }
+      #select::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: -2;
+        background: url('gfx/vehicle-select.png') center / cover no-repeat;
+      }
+      #select::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        background:
+          radial-gradient(62% 46% at 50% 52%, rgba(7, 9, 12, 0.55) 0%, rgba(7, 9, 12, 0.2) 60%, rgba(7, 9, 12, 0) 100%),
+          linear-gradient(to bottom, rgba(7, 9, 12, 0.62) 0%, rgba(7, 9, 12, 0.2) 34%, rgba(7, 9, 12, 0.6) 76%, rgba(7, 9, 12, 0.92) 100%);
+      }
+
+      /* Region A, measured off the backdrop: the readout sits centred in the
+         upper half of the garage rather than pinned to the top of the window,
+         so it reads as being IN the room instead of floating over it. */
+      .select-plate {
+        position: absolute;
+        top: 14%;
+        height: 27%;
+        left: 0;
+        right: 0;
+        display: grid;
+        justify-items: center;
+        align-content: center;
+        padding: 0 24px;
+        text-align: center;
+      }
+      .select-eyebrow {
+        margin: 0 0 6px;
+        font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: 0.42em;
+        text-indent: 0.42em;
+        color: #ff8c1a;
+        text-shadow: 0 0 16px rgba(255, 140, 26, 0.5);
+      }
+
+      /* The bay is sized in vmin so the car keeps its presence on any window
+         shape — a viewport-width box collapses the truck to a smear on a tall
+         phone, and a fixed pixel box is enormous on a laptop. */
+      /* Region B: the open floor between the barrels and the far wall. Placed
+         by fraction rather than by an offset from the bottom, because the floor
+         is a painted feature of the backdrop and stays put as the window grows.
+         The 62vw cap keeps the bay near 2.1:1 against its own height — above
+         about 2.18 the tallest vehicle gets fitted on height instead of width
+         and the box truck starts rendering smaller than the sports car. */
+      .select-stage {
+        position: absolute;
+        top: 46%;
+        height: 40%;
+        left: 50%;
+        transform: translateX(-50%);
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 4px;
+        width: min(62vw, 680px);
+      }
+      .select-bay {
+        position: relative;
+        height: 100%;
+        min-width: 0;
+      }
+      .select-bay canvas { display: block; width: 100%; height: 100%; position: relative; z-index: 1; }
+      /* A contact shadow, in CSS rather than in the scene.
+         The preview renders on a transparent canvas with no ground plane, so
+         the car had nothing to sit on and read as hovering over the garage
+         floor in the backdrop. A real shadow would mean adding a receiver plane
+         and a shadow-casting light to a second renderer for one ellipse. This
+         is an ellipse. It sits behind the canvas, so the car occludes its own
+         shadow the way it should. */
+      .select-bay::after {
+        content: '';
+        position: absolute;
+        left: 50%;
+        bottom: 1%;
+        z-index: 0;
+        width: 44%;
+        height: 8%;
+        transform: translateX(-50%);
+        border-radius: 50%;
+        background: radial-gradient(ellipse at center, rgba(6, 4, 3, 0.72) 0%, rgba(6, 4, 3, 0.34) 52%, rgba(6, 4, 3, 0) 78%);
+      }
+
+      .select-arrow {
+        padding: 18px 14px;
+        font: 20px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #aab4c0;
+        background: none;
+        border: 0;
+        cursor: pointer;
+        transition: color 120ms linear, transform 80ms linear;
+      }
+      .select-arrow:hover { color: #ff8c1a; transform: scale(1.18); }
+      .select-arrow:focus-visible { outline: 2px solid #ff8c1a; outline-offset: 2px; }
+
+      .select-card { display: grid; justify-items: center; gap: 3px; margin-top: 8px; min-height: 74px; }
+      .select-name {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font: 19px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-weight: 700;
+        letter-spacing: 0.2em;
+        color: #e8edf3;
+        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
+      }
+      .select-chip { width: 11px; height: 11px; border-radius: 2px; }
+      .select-kind,
+      .select-line,
+      .select-treatment {
+        margin: 0;
+        font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: 0.1em;
+        color: #aab4c0;
+        text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
+      }
+      .select-kind {
+        color: #ff8c1a;
+        font-size: 10px;
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+      }
+      .select-line { max-width: 60ch; white-space: nowrap; }
+      .select-treatment { color: #7f8a97; letter-spacing: 0.18em; text-transform: uppercase; font-size: 10px; }
+
+      .select-pips { display: flex; gap: 9px; margin-top: 12px; }
+      .select-pip {
+        width: 26px;
+        height: 5px;
+        padding: 0;
+        border: 1px solid #4a5461;
+        border-radius: 1px;
+        background: none;
+        cursor: pointer;
+        transition: border-color 120ms linear, transform 80ms linear;
+      }
+      .select-pip:hover { transform: scaleY(1.6); }
+      .select-pip.is-on { border-color: transparent; }
+      .select-pip:focus-visible { outline: 2px solid #ff8c1a; outline-offset: 3px; }
+
+      .select-go { margin-top: 18px; }
+      .select-hint {
+        margin: 14px 0 0;
+        font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: 0.2em;
+        color: #8b95a3;
+      }
+      .select-hint b { color: #d8dee6; font-weight: 600; }
+
+      /* Launch: the same grammar as the title outro so the two transitions feel
+         like one system. Two seconds, cut against menu-start.ogg. */
+      #select.is-leaving { pointer-events: none; animation: title-out 2s cubic-bezier(0.4, 0, 0.85, 0.35) forwards; }
+      #select.is-leaving .select-eyebrow,
+      #select.is-leaving .select-card,
+      #select.is-leaving .select-pips,
+      #select.is-leaving .select-hint { animation: title-drop 0.42s ease-in forwards; }
+      #select.is-leaving .select-arrow { animation: title-drop 0.3s ease-in forwards; }
+      #select.is-leaving .select-go {
+        background: linear-gradient(180deg, #ffd9a8 0%, #ffb055 100%);
+        color: #1a0f06;
+        box-shadow: inset 0 0 0 2px #ffd9a8, 0 0 46px rgba(255, 170, 60, 0.75);
+        animation: title-drop 0.42s ease-in 0.1s forwards;
+      }
+      /* The car keeps turning as everything leaves — it is the thing you chose,
+         and it should be the last thing still moving. */
+      #select.is-leaving .select-bay { animation: title-drop 0.8s ease-in 0.7s forwards; }
+
+      @media (prefers-reduced-motion: reduce) {
+        #select.is-shown { animation: none; }
+        #select.is-leaving,
+        #select.is-leaving .select-eyebrow,
+        #select.is-leaving .select-card,
+        #select.is-leaving .select-pips,
+        #select.is-leaving .select-hint,
+        #select.is-leaving .select-arrow,
+        #select.is-leaving .select-go,
+        #select.is-leaving .select-bay { animation: none; }
+      }
 
       .tp-dfwv { z-index: 10; }
     </style>
@@ -659,6 +876,7 @@
     <canvas id="scene"></canvas>
     <div id="hud"></div>
     <div id="title"></div>
+    <div id="select"></div>
     <div id="keys">
       <div><b>W&nbsp;S</b> throttle / brake &nbsp;·&nbsp; <b>A&nbsp;D</b> steer</div>
       <div><b>Space</b> handbrake &nbsp;·&nbsp; <b>C</b> look back &nbsp;·&nbsp; <b>R</b> reset &nbsp;·&nbsp; <b>M</b> music &nbsp;·&nbsp; <b>N</b> mute &nbsp;·&nbsp; <b>P</b> pause &nbsp;·&nbsp; <b>E</b> engine</div>

@@ -39,15 +39,15 @@ export type Title = {
 }
 
 /**
- * Outro length, in milliseconds, and it is not a free parameter.
+ * Outro length, in milliseconds.
  *
- * `menu-start.ogg` is cut to 2.05s: a starter motor grinding for about a
- * second, the engine catching, and the idle establishing. The animation is
- * choreographed against that recording — if either changes length, the other
- * changes with it, because a sound that ends before the picture does reads as
- * two bugs rather than one mismatch.
+ * 900, not the 2000 it was. This used to be the last step before the arena and
+ * was cut against `menu-start.ogg` — a two-second starter motor. START now
+ * opens the vehicle select instead, so the engine moved to the launch button
+ * where it belongs, and two seconds of choreography to cross between two menus
+ * is just latency with a bow on it. The select screen keeps the full 2s launch.
  */
-const OUTRO_MS = 2000
+const OUTRO_MS = 900
 
 /** Ignore hover retriggers closer together than this. */
 const HOVER_DEBOUNCE_MS = 140

@@ -246,18 +246,18 @@ export const MILESTONES: readonly Milestone[] = [
       {
         id: 'm8-flow',
         label: 'Screen state machine: title → select → match → result → back',
-        done: false,
+        done: true,
         note: 'The match already models a countdown and a result board. This wraps that; it does not duplicate it.',
       },
       {
         id: 'm8-select',
         label: 'Vehicle select: four cars, chosen car launches the match',
-        done: false,
+        done: true,
       },
       {
         id: 'm8-select-live',
         label: 'The car on the select screen is the LIVE model, not a painting',
-        done: false,
+        done: true,
         note: 'carFor() already builds it and refsheet already poses it off-screen. A painted car would drift from the real one the first time the paint changes, and the paint has changed twice already.',
       },
       {
@@ -275,7 +275,7 @@ export const MILESTONES: readonly Milestone[] = [
       {
         id: 'm8-art-select',
         label: 'Vehicle select backdrop, with an empty stage for the live car',
-        done: false,
+        done: true,
         note: 'The stage has to hold the box truck, not just a coupe.',
       },
       {

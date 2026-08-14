@@ -23,9 +23,44 @@ export type Rgb = readonly [number, number, number]
  */
 export const LIVERIES = [0xd8452f, 0x3f8ecc, 0x4f9c46, 0xc9a227] as const
 
-/** A car's paint as a CSS colour, for the DOM overlay and the radar. */
+/**
+ * Which paint a VEHICLE wears — the indirection the select screen needs.
+ *
+ * The sim has no idea what colour anything is. Vehicles are ids, and that is
+ * Contract 4 doing its job: what a car looks like is a view concern, so nothing
+ * below this layer had to change to let the player pick one.
+ *
+ * Vehicle 0 is always the player and wears whatever they chose. The rest fill
+ * the remaining liveries in order, so all four are always on the field and no
+ * two cars are ever the same colour — which is the entire reason the four
+ * liveries were picked to be distinguishable in the first place.
+ */
+let chosen = 0
+
+export function setPlayerLivery(livery: number): void {
+  chosen = ((livery % LIVERIES.length) + LIVERIES.length) % LIVERIES.length
+}
+
+export function playerLivery(): number {
+  return chosen
+}
+
+export function liveryOf(vehicleId: number): number {
+  if (vehicleId <= 0) return chosen
+  const others: number[] = []
+  for (let i = 0; i < LIVERIES.length; i++) if (i !== chosen) others.push(i)
+  return others[(vehicleId - 1) % others.length]!
+}
+
+/**
+ * A car's paint as a CSS colour, for the DOM overlay and the radar.
+ *
+ * Takes a VEHICLE id, not a livery index, and maps it — every caller in the HUD
+ * passes a vehicle id. Routing it here is what keeps the radar blip, the HUD
+ * pip and the paint on the car agreeing after the player picks a different car.
+ */
 export function liveryCss(id: number): string {
-  return hexCss(LIVERIES[((id % LIVERIES.length) + LIVERIES.length) % LIVERIES.length]!)
+  return hexCss(LIVERIES[liveryOf(id)]!)
 }
 
 /**
