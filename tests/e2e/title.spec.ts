@@ -43,6 +43,9 @@ import { expect, test, type Page } from '@playwright/test'
 
 type Api = { __deadPedal: { world: () => { tick: number; match: { phase: string } }; drawCalls: () => number } }
 
+const drawCallsOf = (page: Page): Promise<number> =>
+  page.evaluate(() => (window as unknown as Api).__deadPedal.drawCalls())
+
 const tickOf = (page: Page): Promise<number> =>
   page.evaluate(() => (window as unknown as Api).__deadPedal.world().tick)
 
@@ -89,6 +92,22 @@ test.describe('M8 — the title screen', () => {
     await page.locator('.title-start').click()
     await expect(page.locator('#select')).toBeVisible()
 
+    /**
+     * NOTHING is drawn yet, and that is the fix for a real bug.
+     *
+     * The arena used to render from the first frame underneath both menus, with
+     * its vehicle views built under the default livery. You never saw it until
+     * the launch animation faded the select screen out — at which point the
+     * DEFAULT car appeared for a moment and then swapped to the chosen one as
+     * the restyle landed. Rendering is now switched on at the same instant as
+     * the restyle, so the first frame ever drawn already wears the right paint
+     * and there is no frame in which the wrong car can exist.
+     *
+     * Zero draw calls is the strongest form of that guarantee: not "the right
+     * car was drawn" but "no car was drawn at all".
+     */
+    expect(await drawCallsOf(page), 'the arena must not be drawn behind the menus').toBe(0)
+
     // Walk to the box truck and read back what the screen claims.
     await expect(page.locator('#select')).toHaveClass(/is-armed/)
     await page.locator('[data-next]').click()
@@ -107,6 +126,7 @@ test.describe('M8 — the title screen', () => {
       () => (window as unknown as { __deadPedal: { playerLivery: () => number } }).__deadPedal.playerLivery(),
     )
     expect(blip, 'the radar and the select card must agree').toBe(2)
+    expect(await drawCallsOf(page), 'the arena renders once the match is live').toBeGreaterThan(0)
   })
 
   test('starts from the keyboard, and only once', async ({ page }) => {

@@ -146,6 +146,25 @@ audio.startMusic()
  */
 let started = new URLSearchParams(location.search).has('nomenu')
 
+/**
+ * Whether the arena is drawn at all.
+ *
+ * The arena used to render from the first frame, underneath both menus. You
+ * could not see it — the backdrops are opaque — right up until the launch
+ * animation faded the select screen out, at which point you saw the DEFAULT car
+ * for a moment and then watched it swap to the one you picked. The swap was
+ * `restyle()` landing at the end of the transition, but the real fault was
+ * drawing a world nobody had asked for yet.
+ *
+ * Now nothing is drawn until the player commits to a car. Rendering switches on
+ * at the START of the launch animation, together with the restyle, so the two
+ * seconds of fade are spent drawing the CORRECT arena and the reveal has
+ * nothing left to correct. The sim stays frozen for that whole time — drawing
+ * and simulating are separate switches, and only one of them is being flipped
+ * here.
+ */
+let showArena = started
+
 const titleRoot = document.getElementById('title')
 if (titleRoot === null) throw new Error('missing #title')
 const selectRoot = document.getElementById('select')
@@ -163,11 +182,16 @@ const select = createSelect(selectRoot, {
   archetype: DEFAULT_VEHICLE,
   onHover: () => audio.playUi('menuHover'),
   onChange: () => audio.playUi('menuHover'),
-  onCommit: () => audio.playUi('menuStart'),
-  onLaunch: () => {
-    // Views bake their livery when they are built, and all four already exist
-    // behind the menus. Without this the choice would never reach the screen.
+  onCommit: () => {
+    audio.playUi('menuStart')
+    // Both switches thrown here, at the START of the launch animation, so the
+    // arena revealed by the fade is already the right one. `restyle` drops the
+    // cached vehicle views; they rebuild on the next frame under the livery
+    // that was just chosen.
     renderer.restyle()
+    showArena = true
+  },
+  onLaunch: () => {
     started = true
   },
 })
@@ -501,7 +525,9 @@ function frame(now: number): void {
   )
 
   // ── render ─────────────────────────────────────────────────────────────────
-  renderer.render(previous, current, alphaOf(clock), elapsed, PLAYER, lookBack)
+  // Skipped entirely while the menus are up. Cheaper, and it is what stops the
+  // player seeing a car they did not choose.
+  if (showArena) renderer.render(previous, current, alphaOf(clock), elapsed, PLAYER, lookBack)
 
   // ── readouts ───────────────────────────────────────────────────────────────
   fps = fps === 0 ? 1 / elapsed : fps * 0.92 + (1 / elapsed) * 0.08
