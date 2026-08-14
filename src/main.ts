@@ -190,6 +190,17 @@ const select = createSelect(selectRoot, {
     // that was just chosen.
     renderer.restyle()
     showArena = true
+    /**
+     * The arrival shot, started with the first drawn frame rather than when
+     * the match goes live.
+     *
+     * It runs under the fading select screen and then under the countdown, so
+     * by the time the flag drops the camera is already home. Costs no play
+     * time. 2.6s against a 3s countdown leaves the last 0.4s settled, which is
+     * the difference between a camera arriving and a camera still moving when
+     * you are handed the controls.
+     */
+    renderer.playIntro(2.6)
   },
   onLaunch: () => {
     started = true

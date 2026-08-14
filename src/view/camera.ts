@@ -54,6 +54,35 @@ export type CameraTuning = {
   fovStiffness: number
 }
 
+/**
+ * Where the arrival shot begins: wide, low, and off the car's front quarter.
+ *
+ * 18m out against the 9.5m the chase camera settles at, and 0.85m up against
+ * 3.9m — low enough that you are looking slightly UP at the car with the arena
+ * floor filling the bottom of the frame, which is what makes it read as a
+ * establishing shot rather than a menu transition.
+ *
+ * 18m is chosen against the arena, not picked for feel alone. The player spawns
+ * at z -42 in a plate that runs to -90, so the camera has 48m of clearance
+ * behind the car and cannot end up outside the wall looking in at one metre off
+ * the deck.
+ */
+const INTRO_DISTANCE = 18
+const INTRO_HEIGHT = 0.85
+
+/**
+ * How far round the car the shot travels, starting from the front quarter.
+ *
+ * 150°, not 180°. Dead ahead is a weaker opening — the car reads as a flat
+ * front elevation with no length to it — whereas a front three-quarter shows
+ * the nose and one whole flank at once, which is how every car has been
+ * photographed for a century. It still crosses most of a half circle.
+ */
+const INTRO_ARC = (150 * Math.PI) / 180
+
+/** Extra degrees of lens at the start, closing to zero. A dolly and a zoom. */
+const INTRO_FOV_BOOST = 12
+
 export const DEFAULT_CAMERA: CameraTuning = {
   distance: 9.5,
   height: 3.9,
@@ -96,12 +125,46 @@ export class ChaseCamera {
   private frozen = 0
   private initialised = false
   private lookingBack = false
+  /** Seconds left of the arrival shot, and its full length. See `playIntro`. */
+  private intro = 0
+  private introLength = 0
+  /** True on frames the intro owns the lens, so the speed-FOV cannot fight it. */
+  private introFov = false
 
   constructor(aspect: number, tuning: CameraTuning = { ...DEFAULT_CAMERA }) {
     this.tuning = tuning
     this.camera = new PerspectiveCamera(tuning.baseFov, aspect, 0.1, 1200)
     // Starts where the lens starts, so the first frame does not ease in from 0.
     this.fov = tuning.baseFov
+  }
+
+  /**
+   * The arrival shot: swing in from in front of the car and settle behind it.
+   *
+   * Purely a camera move. The sim is untouched, nothing is delayed, and if this
+   * were deleted tomorrow the match would play identically — which is the test
+   * for whether something belongs in here at all.
+   *
+   * It is timed to run inside the countdown, so it costs no play time. The path
+   * starts low and close, roughly where a driver's eyeline is, in front of the
+   * car looking back at it, then orbits round to the normal chase pose while
+   * rising and pulling out.
+   *
+   * The important property is that the path ENDS on the ordinary chase pose
+   * exactly, rather than near it. The orbit is parameterised so that at
+   * progress 1 the offset angle is zero, the radius is `tuning.distance` and
+   * the height is `tuning.height` — which is the definition of where the camera
+   * belongs. So the handoff back to normal smoothing has nothing to correct and
+   * cannot pop.
+   */
+  playIntro(seconds: number): void {
+    this.intro = seconds
+    this.introLength = seconds
+  }
+
+  /** True while the arrival shot is still running. */
+  get introducing(): boolean {
+    return this.intro > 0
   }
 
   /** Register an impact. Magnitude is closing speed in m/s. */
@@ -176,7 +239,41 @@ export class ChaseCamera {
     const desiredY = target.y + t.height
     const desiredZ = target.z - forward.z * t.distance
 
-    if (cut) {
+    if (this.intro > 0) {
+      this.intro = Math.max(0, this.intro - dt)
+      const p = this.introLength > 0 ? 1 - this.intro / this.introLength : 1
+      /**
+       * Smootherstep: slow out of the gate, quick through the middle, slow into
+       * place.
+       *
+       * The first version used a hard ease-out, which front-loads everything —
+       * the camera did most of its travelling in the first half second and then
+       * crawled, so a two-and-a-half second shot felt like it was over almost
+       * immediately. Symmetric easing spends the whole duration moving and
+       * still arrives decelerating, which is the part that matters for the
+       * handoff.
+       */
+      const e = p * p * p * (p * (p * 6 - 15) + 10)
+
+      // Offset around the car: the front quarter down to zero, which is behind.
+      const orbit = wrapAngle(viewYaw + INTRO_ARC * (1 - e))
+      const arm = forwardOf(orbit)
+      const radius = lerp(INTRO_DISTANCE, t.distance, e)
+      const height = lerp(INTRO_HEIGHT, t.height, e)
+
+      this.position.set(
+        target.x - arm.x * radius,
+        target.y + height,
+        target.z - arm.z * radius,
+      )
+      // The lens closes as the camera comes in, so the move is a dolly and a
+      // zoom rather than only a dolly. Set outright rather than smoothed: the
+      // path is already eased, and running it through the FOV spring as well
+      // would lag it behind the position and land wide.
+      this.fov = t.baseFov + INTRO_FOV_BOOST * (1 - e)
+      this.introFov = true
+      this.initialised = true
+    } else if (cut) {
       this.position.set(desiredX, desiredY, desiredZ)
       this.initialised = true
     } else {
@@ -208,7 +305,11 @@ export class ChaseCamera {
 
     const speedRatio = clamp(Math.abs(target.speed) / target.maxSpeed, 0, 1)
     const wantedFov = t.baseFov + t.fovAtSpeed * speedRatio * speedRatio
-    this.fov += (wantedFov - this.fov) * Math.min(1, t.fovStiffness * dt)
+    // Skipped while the intro owns the lens. It hands back at exactly
+    // `baseFov`, which is where the speed curve starts from at a standstill, so
+    // there is nothing to catch up on.
+    if (this.introFov) this.introFov = false
+    else this.fov += (wantedFov - this.fov) * Math.min(1, t.fovStiffness * dt)
     this.camera.fov = this.fov
     this.camera.updateProjectionMatrix()
   }

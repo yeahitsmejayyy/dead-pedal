@@ -244,6 +244,12 @@ export const MILESTONES: readonly Milestone[] = [
         note: 'Three hover variants cut from one generated take, loudness-matched from a 24.2 dB raw spread to -3.0 dB — unmatched variants rotate as a volume wobble rather than as variety. Debounced at 140ms on top of the mixer\'s own repeat guard, which is tuned for simultaneous sim events and far too short for a menu.',
       },
       {
+        id: 'm8-arrival',
+        label: 'Cinematic camera arrival into the match',
+        done: true,
+        note: '2.9s inside the 3s countdown, so it costs no play time. Opens 18m out and 0.85m up off the car\'s front quarter, then sweeps 150° round to the chase pose while rising and closing a 12° lens boost — a dolly and a zoom, not just a dolly. Smootherstep, so it spends the whole duration moving; the first attempt used a hard ease-out and finished travelling in half a second, which read as underwhelming however far it went. The path is parameterised to END on the ordinary chase pose exactly rather than near it, which is what stops it popping on the handoff frame.',
+      },
+      {
         id: 'm8-flow',
         label: 'Screen state machine: title → select → match → result → back',
         done: true,

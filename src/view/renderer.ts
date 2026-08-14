@@ -332,6 +332,11 @@ export class Renderer {
    * effect until something else happened to rebuild them, which is to say
    * never.
    */
+  /** Play the arrival shot. See `ChaseCamera.playIntro`. */
+  playIntro(seconds: number): void {
+    this.chase.playIntro(seconds)
+  }
+
   restyle(): void {
     for (const view of this.views.values()) this.scene.remove(view.root)
     this.views.clear()
