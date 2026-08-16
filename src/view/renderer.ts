@@ -32,7 +32,7 @@ import { VehicleView } from './vehicleView'
 import { loadCarModels, modelsReady } from './carModels'
 import { liveryOf } from './palette'
 import { createSky } from './sky'
-import { barbedWireTexture, buildFence, chainLinkTexture, rustTexture } from './fence'
+import { buildFence, chainLinkTexture, rustTexture } from './fence'
 import { planarUvs } from './planarUv'
 
 /**
@@ -104,21 +104,14 @@ const FENCE = new MeshStandardMaterial({
 const POST = new MeshStandardMaterial({ color: 0x6e6459, roughness: 0.75, metalness: 0.35 })
 
 /**
- * Barbed wire: a silhouette cut out of a quad, not a bar.
+ * Razor wire. Real helical geometry now, so no alpha map and no cutout.
  *
- * Alpha-tested for the same reason the chain-link is — blending would put 240
- * thin quads into the sorted pass to be drawn through each other. Dark, because
- * the job of wire against a bright sky is to be a silhouette, and thin geometry
- * catches almost no light anyway.
+ * Dark and rough: the job of wire against a burning sky is to be a silhouette,
+ * and a 4cm tube catches almost no light whatever you make it of. Slightly
+ * metallic so the loops nearest the sun still pick out an edge, which is what
+ * stops a coil reading as a flat scribble.
  */
-const BARB = new MeshStandardMaterial({
-  color: 0x2e2822,
-  roughness: 0.9,
-  metalness: 0.2,
-  alphaMap: barbedWireTexture(),
-  alphaTest: 0.4,
-  side: DoubleSide,
-})
+const BARB = new MeshStandardMaterial({ color: 0x241f1a, roughness: 0.75, metalness: 0.45 })
 const BLOCK = new MeshStandardMaterial({ color: 0x6b6055, roughness: 0.8 })
 /**
  * The ramps: the same dirt as the floor, piled up.

@@ -30,8 +30,11 @@ import {
   type BufferGeometry,
   CanvasTexture,
   BoxGeometry,
+  CatmullRomCurve3,
   PlaneGeometry,
   RepeatWrapping,
+  TubeGeometry,
+  Vector3,
 } from 'three'
 import type { Arena } from '../sim'
 import { fromSeed, next, type RngState } from '../core/rng'
@@ -54,11 +57,14 @@ const ARM_TILT = 0.72 // radians, about 41°
 /** How far up the posts continue past the wire, to carry the barbed wire. */
 const ARM_LENGTH = 0.62
 
-/** Height of the quad a strand of barbed wire is cut out of. */
-const BARB_QUAD = 0.26
+/** Radius of a razor-wire coil. Real concertina runs 45–75cm across. */
+const COIL_RADIUS = 0.3
 
-/** Metres of wire one tile of the barbed silhouette covers. */
-const BARB_TILE = 0.75
+/** Metres between turns. Tighter reads as denser and costs more triangles. */
+const COIL_PITCH = 0.7
+
+/** Thickness of the wire itself. */
+const WIRE_RADIUS = 0.022
 
 /**
  * One tile of chain-link, as a greyscale mask.
@@ -175,69 +181,35 @@ export function rustTexture(): CanvasTexture {
 }
 
 /**
- * Barbed wire: two twisted strands with a four-point barb at intervals.
+ * A coil of razor wire, as an actual helix.
  *
- * GEOMETRY WAS THE WRONG ANSWER HERE. Real barbs sit every 15cm or so, and this
- * perimeter is 720m with three strands — about 14,000 barbs, each a pair of
- * crossed prisms. That is six figures of triangles for something usually seen
- * from 100m away. Cutting the silhouette out of a quad costs two triangles per
- * span per strand and reads correctly at every distance, which is how games
- * have drawn wire and foliage for twenty years.
+ * GEOMETRY THIS TIME, where the flat strands it replaces were an alpha-cut
+ * silhouette. The reason is what a concertina coil IS: a spiral you see
+ * THROUGH, with the far side of every loop visible inside the near side. That
+ * is depth, and depth is the one thing a cut-out quad can never fake — flat
+ * strands were fine as strands and would read as a printed sticker as a coil.
  *
- * The previous version had no silhouette at all — it was a 55mm box, which is
- * to say a bar. Bars are not barbed wire.
+ * Affordable because it is coarse. Thirteen turns per 9m span at eight points
+ * a turn, on a three-sided tube, is about 620 triangles per span and 50,000
+ * for a 720m perimeter — and it still merges into the same single draw call.
+ * A three-sided tube is invisible as a triangle at 4cm thick.
  */
-export function barbedWireTexture(): CanvasTexture {
-  const width = 128
-  const height = 32
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')
-  if (ctx === null) throw new Error('fence: no 2d context')
+function coilGeometry(length: number, radius: number, pitch: number): BufferGeometry {
+  const turns = Math.max(2, Math.round(length / pitch))
+  const perTurn = 8
+  const total = turns * perTurn
 
-  ctx.fillStyle = '#000000'
-  ctx.fillRect(0, 0, width, height)
-  ctx.strokeStyle = '#ffffff'
-  ctx.lineCap = 'round'
-
-  // Two strands wound around each other. Drawn as opposed sine waves, which is
-  // what a twisted pair looks like in silhouette.
-  const mid = height / 2
-  const twist = 16
-  const amplitude = 2.6
-  for (const phase of [0, Math.PI]) {
-    ctx.lineWidth = 2.4
-    ctx.beginPath()
-    for (let x = 0; x <= width; x++) {
-      const y = mid + Math.sin((x / twist) * Math.PI * 2 + phase) * amplitude
-      if (x === 0) ctx.moveTo(x, y)
-      else ctx.lineTo(x, y)
-    }
-    ctx.stroke()
+  // Built along X and rotated by the caller, the same convention the panels use.
+  const points: Vector3[] = []
+  for (let i = 0; i <= total; i++) {
+    const t = i / total
+    const angle = t * turns * Math.PI * 2
+    points.push(
+      new Vector3(-length / 2 + t * length, Math.cos(angle) * radius, Math.sin(angle) * radius),
+    )
   }
 
-  // Barbs: four points, at the twist interval so they sit where the strands
-  // cross, which is where a real barb is clamped.
-  ctx.lineWidth = 2
-  for (let x = twist / 2; x < width; x += twist * 2) {
-    for (const [dx, dy] of [
-      [-1, -1],
-      [1, -1],
-      [-1, 1],
-      [1, 1],
-    ] as const) {
-      ctx.beginPath()
-      ctx.moveTo(x, mid)
-      ctx.lineTo(x + dx * 5.5, mid + dy * 6.5)
-      ctx.stroke()
-    }
-  }
-
-  const texture = new CanvasTexture(canvas)
-  texture.wrapS = RepeatWrapping
-  texture.wrapT = RepeatWrapping
-  return texture
+  return new TubeGeometry(new CatmullRomCurve3(points), total, WIRE_RADIUS, 3, false)
 }
 
 /**
@@ -268,7 +240,7 @@ export type FenceParts = {
   readonly posts: BufferGeometry[]
   /** The wire panels themselves. */
   readonly mesh: BufferGeometry[]
-  /** Barbed strands, thin enough to want their own material. */
+  /** Razor-wire coils along the top. */
   readonly barbed: BufferGeometry[]
 }
 
@@ -394,23 +366,22 @@ export function buildFence(arena: Arena): FenceParts {
         )
         posts.push(arm)
 
-        // Three runs of wire up the arm. Quads with a barbed silhouette cut out
-        // of them, not bars — see `barbedWireTexture`.
-        for (const t of [0.34, 0.67, 1]) {
-          const strand = new PlaneGeometry(spanLength, BARB_QUAD)
-          const uv = strand.getAttribute('uv')
-          for (let v = 0; v < uv.count; v++) {
-            uv.setXY(v, uv.getX(v) * (spanLength / BARB_TILE) + centre / BARB_TILE, uv.getY(v))
-          }
-          uv.needsUpdate = true
-          if (alongZ) strand.rotateY(Math.PI / 2)
-          strand.translate(
-            x + (alongZ ? armReach * t : 0),
-            arena.groundY + top + armLift * t,
-            z + (alongZ ? 0 : armReach * t),
-          )
-          barbed.push(strand)
-        }
+        /**
+         * One coil, riding on the arm tip.
+         *
+         * Its axis runs ALONG the fence, so consecutive spans read as one
+         * continuous run of concertina rather than as a row of separate hoops.
+         * Radius jitters a little between spans — a coil is sprung steel that
+         * has been stretched by hand, not extruded.
+         */
+        const coil = coilGeometry(spanLength, COIL_RADIUS * (0.85 + rand() * 0.3), COIL_PITCH)
+        if (alongZ) coil.rotateY(Math.PI / 2)
+        coil.translate(
+          x + (alongZ ? armReach : 0),
+          arena.groundY + top + armLift + COIL_RADIUS * 0.55,
+          z + (alongZ ? 0 : armReach),
+        )
+        barbed.push(coil)
       }
 
       /**

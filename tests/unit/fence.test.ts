@@ -42,12 +42,23 @@ describe('the perimeter fence', () => {
     expect(fence.barbed.length).toBeGreaterThan(20)
   })
 
-  it('cuts its barbed wire out of quads rather than extruding bars', () => {
-    // Four vertices is a plane. A box has 24, and a box is what this used to be
-    // — which is to say a bar, which is not barbed wire. The silhouette lives
-    // in the alpha map, so the geometry underneath must stay a quad.
-    for (const strand of fence.barbed) {
-      expect(strand.getAttribute('position').count).toBe(4)
+  it('coils its razor wire instead of running it flat', () => {
+    /**
+     * A coil has to be a HELIX, not a strand and not a quad.
+     *
+     * This has been wrong twice: first a solid box (a bar), then an alpha-cut
+     * quad (a sticker). What makes concertina read is seeing through the loops
+     * to the far side of the coil, which needs actual depth. So: many vertices,
+     * and a cross-section that is round rather than flat in any axis.
+     */
+    for (const coil of fence.barbed) {
+      const position = coil.getAttribute('position')
+      expect(position.count, 'a coil is not a quad').toBeGreaterThan(200)
+
+      const box = new Box3().setFromBufferAttribute(position as never)
+      const size = box.getSize(new Vector3())
+      const across = Math.min(size.x, size.y, size.z)
+      expect(across, 'and has thickness in every axis').toBeGreaterThan(0.3)
     }
   })
 
