@@ -210,7 +210,7 @@ export const MILESTONES: readonly Milestone[] = [
         id: 'm7-art',
         label: 'Art pass: vehicle models, arena dressing, one atlas',
         done: false,
-        note: 'Vehicles done. Arena slice 1 done — burning-dusk sky dome, seeded silhouette city with smoke, tiled high-desert dirt (ambientCG Ground067, CC0), dusk lighting and fog. Left: chain-link walls, dirt ramps, and props along the wall.',
+        note: 'Vehicles done. Slice 1: burning-dusk sky dome, seeded silhouette city with smoke, tiled high-desert dirt (ambientCG Ground067, CC0), dusk lighting and fog. Slice 2: chain-link perimeter on a concrete kerb with steel posts, barbed wire leaning inward as an alpha-cut silhouette rather than a bar, rust, kinked two-segment posts, per-span kerb, and spans torn down to stubs or left sagging off a post, and dirt ramps UV-projected per face off the world axes. Wear is geometry rather than texture — a tear baked into a tile would repeat every 2.4m around a 720m perimeter and read as a pattern. 62 draw calls against a budget of 100. Left: props along the wall, and the concrete blocks still read as placeholders.',
       },
       {
         id: 'm7-music',

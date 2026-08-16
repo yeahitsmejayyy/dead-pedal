@@ -120,20 +120,48 @@ async function runFrames(page: Page, frames: number): Promise<void> {
 }
 
 test.describe('M7 — the same seed draws the same frame', () => {
+  /**
+   * A bigger budget than the 60s the rest of the suite runs on.
+   *
+   * This spec pays two costs nothing else does: it waits for EVERY asset — 2.7MB
+   * of glTF and half a megabyte of texture — and then drives a couple of hundred
+   * frames by hand through a software rasteriser. On a warm server it finishes
+   * in about twenty seconds; on the first run after the dev server comes up,
+   * vite is also transforming every module for the first time and it does not.
+   *
+   * Measured before raising it: one timeout in six runs, always the first of a
+   * batch. Raising the inner `waitForFunction` alone did not fix it — the outer
+   * test timeout then became the shorter of the two, which is a good reminder
+   * that a timeout is only as useful as the smallest one enclosing it.
+   */
+  test.describe.configure({ timeout: 150_000 })
+
   test.beforeEach(async ({ page }) => {
     await pinTime(page)
     await page.goto('/?silent=1&nomenu=1')
     await page.waitForFunction(() => '__deadPedal' in window)
-    // Car models load over the network on REAL time, while the frames below run
-    // on a clock this test drives by hand. Without waiting, whether the shot
-    // catches the glTF cars or the procedural boxes they replace comes down to
-    // how fast the machine fetched 2.7MB — which is a flake waiting to happen,
-    // and one that would have been blamed on the renderer.
+    /**
+     * Wait for every asset, on real time, before the hand-driven clock starts.
+     *
+     * Car models and arena textures load over the network while the frames
+     * below run on a clock this test drives itself. Without waiting, whether
+     * the shot catches the glTF cars or the procedural boxes they replace comes
+     * down to how fast the machine fetched 3.3MB — a flake that would have been
+     * blamed on the renderer.
+     *
+     * 90 seconds, not the 30 this started with. That is not slack for a slow
+     * render; it is a COLD START budget. On the first run after the dev server
+     * comes up, vite is transforming modules for the first time AND the browser
+     * is pulling 2.7MB of glTF plus half a megabyte of texture, and 30s was not
+     * always enough — measured as one timeout in six runs, always the first of a
+     * batch. A warm run finishes this in under two seconds, so the larger
+     * number costs nothing when it is not needed.
+     */
     await page.waitForFunction(
       () => (window as unknown as { __deadPedal: { modelsLoaded: () => boolean } })
         .__deadPedal.modelsLoaded(),
       undefined,
-      { timeout: 30_000 },
+      { timeout: 90_000 },
     )
   })
 

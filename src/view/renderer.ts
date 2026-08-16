@@ -7,6 +7,7 @@
 import {
   BoxGeometry,
   Color,
+  DoubleSide,
   BufferGeometry,
   DirectionalLight,
   Float32BufferAttribute,
@@ -31,6 +32,8 @@ import { VehicleView } from './vehicleView'
 import { loadCarModels, modelsReady } from './carModels'
 import { liveryOf } from './palette'
 import { createSky } from './sky'
+import { barbedWireTexture, buildFence, chainLinkTexture, rustTexture } from './fence'
+import { planarUvs } from './planarUv'
 
 /**
  * The arena floor: high-desert dirt, tiled.
@@ -58,7 +61,7 @@ const groundTextures = new TextureLoader()
  * Counted down on error as well as success. A 404 that leaves the counter
  * stuck would hang the test suite waiting for a texture that is never coming.
  */
-let groundPending = 2
+let groundPending = 4
 const groundLoaded = (): void => {
   groundPending = Math.max(0, groundPending - 1)
 }
@@ -72,9 +75,70 @@ const GROUND = new MeshStandardMaterial({
   // and the floor came out fluorescent.
   color: 0xffffff,
 })
+/** The concrete kerb the fence stands on. */
 const WALL = new MeshStandardMaterial({ color: 0x4a4038, roughness: 0.85 })
+
+/**
+ * Chain-link. Alpha-TESTED rather than transparent — see `fence.ts`.
+ *
+ * `alphaTest` at 0.5 with a two-tone mask gives a hard cutout, which is what
+ * wire is: there is no partially-present wire. It also keeps the panels in the
+ * opaque pass, so four of them seen through each other cannot sort wrong.
+ */
+const FENCE = new MeshStandardMaterial({
+  // Rust wash at a coarse scale, so the corrosion does not repeat with the
+  // weave. `repeat` under 1 stretches one blotch across several metres.
+  map: (() => {
+    const rust = rustTexture()
+    rust.repeat.set(0.16, 0.16)
+    return rust
+  })(),
+  roughness: 0.85,
+  metalness: 0.2,
+  alphaMap: chainLinkTexture(),
+  alphaTest: 0.5,
+  side: DoubleSide,
+})
+
+/** Posts and top rail: galvanised once, weathered since. */
+const POST = new MeshStandardMaterial({ color: 0x6e6459, roughness: 0.75, metalness: 0.35 })
+
+/**
+ * Barbed wire: a silhouette cut out of a quad, not a bar.
+ *
+ * Alpha-tested for the same reason the chain-link is — blending would put 240
+ * thin quads into the sorted pass to be drawn through each other. Dark, because
+ * the job of wire against a bright sky is to be a silhouette, and thin geometry
+ * catches almost no light anyway.
+ */
+const BARB = new MeshStandardMaterial({
+  color: 0x2e2822,
+  roughness: 0.9,
+  metalness: 0.2,
+  alphaMap: barbedWireTexture(),
+  alphaTest: 0.4,
+  side: DoubleSide,
+})
 const BLOCK = new MeshStandardMaterial({ color: 0x6b6055, roughness: 0.8 })
-const RAMP = new MeshStandardMaterial({ color: 0x6b5a3e, roughness: 0.85 })
+/**
+ * The ramps: the same dirt as the floor, piled up.
+ *
+ * Loaded a SECOND time rather than sharing the floor's textures, because
+ * `repeat` lives on the Texture and the floor's is set to 160. The ramps carry
+ * their tiling in their UVs instead (see `buildArena`), so they need a texture
+ * whose repeat is left at 1. The browser serves the second request from cache;
+ * the only real cost is a second GPU upload of an image already in memory.
+ *
+ * Tinted a touch lighter than the floor. A ramp made of visibly the same
+ * surface as the ground it sits on disappears into it, and this one is a thing
+ * you are supposed to aim at.
+ */
+const RAMP = new MeshStandardMaterial({
+  map: groundTextures.load('tex/dirt-color.jpg', groundLoaded, undefined, groundLoaded),
+  normalMap: groundTextures.load('tex/dirt-normal.jpg', groundLoaded, undefined, groundLoaded),
+  color: 0xd2bda1,
+  roughness: 0.92,
+})
 /**
  * Boost chevrons, painted up a ramp's short back incline.
  *
@@ -295,21 +359,32 @@ export class Renderer {
     // budgets 100 for the whole frame, which the game was already exceeding at
     // 104 in ordinary play. Merging is worth 21 of those and changes nothing
     // you can see: same geometry, same material, same shadows.
-    const wallParts: BufferGeometry[] = []
-    for (const sx of [-1, 1]) {
-      const side = new BoxGeometry(1, arena.wallHeight, hz * 2)
-      side.translate(sx * hx, arena.groundY + arena.wallHeight / 2, 0)
-      wallParts.push(side)
-    }
-    for (const sz of [-1, 1]) {
-      const end = new BoxGeometry(hx * 2, arena.wallHeight, 1)
-      end.translate(0, arena.groundY + arena.wallHeight / 2, sz * hz)
-      wallParts.push(end)
-    }
-    const walls = mergeGeometries(wallParts, false)
-    if (walls !== null) {
-      const mesh = new Mesh(walls, WALL)
+    /**
+     * The perimeter, as a fence rather than a slab.
+     *
+     * The sim is untouched by this. It reads `arena.wallHeight` and bounces
+     * cars off a plane at the boundary; it has never known or cared what that
+     * boundary looks like, which is why swapping a wall for a fence is a view
+     * change and not a physics one.
+     *
+     * Three merged meshes instead of one — kerb, wire, steel — because they are
+     * three materials. Still three draw calls for a 720m perimeter.
+     */
+    const fence = buildFence(arena)
+    for (const [parts, material, casts] of [
+      [fence.kerb, WALL, true],
+      [fence.posts, POST, true],
+      [fence.barbed, BARB, false],
+      [fence.mesh, FENCE, false],
+    ] as const) {
+      const merged = mergeGeometries(parts, false)
+      if (merged === null) continue
+      const mesh = new Mesh(merged, material)
       mesh.receiveShadow = true
+      // The wire deliberately does not cast. A chain-link shadow is a mess of
+      // alpha-tested diamonds at shadow-map resolution, and it costs a second
+      // pass over every panel to render noise.
+      mesh.castShadow = casts
       this.scene.add(mesh)
     }
 
@@ -387,8 +462,30 @@ export class Renderer {
       }
     }
 
-    const ramps = mergeGeometries(rampParts, false)
+    const merged = mergeGeometries(rampParts, false)
+    /**
+     * `wedgeGeometry` is hand-built and carries no useful UVs, and the merge has
+     * already baked every ramp into world coordinates — so the texture is
+     * projected on from the world axes, per face.
+     *
+     * Per face matters here. A single top-down projection was the first
+     * attempt and the ramps came back streaked: the steep back incline and the
+     * flanks are near-vertical, and projecting them from above smears one row
+     * of texels down the whole face. Picking the plane from each triangle's own
+     * normal costs a de-index and fixes it outright.
+     *
+     * Same world grid as the floor, so a ramp reads as a mound OF the arena
+     * floor rather than an object sitting on it.
+     */
+    const ramps = merged === null ? null : planarUvs(merged, 4)
     if (ramps !== null) {
+      for (const map of [RAMP.map, RAMP.normalMap]) {
+        if (map === null) continue
+        map.wrapS = RepeatWrapping
+        map.wrapT = RepeatWrapping
+        map.anisotropy = this.renderer.capabilities.getMaxAnisotropy()
+      }
+
       const mesh = new Mesh(ramps, RAMP)
       mesh.castShadow = true
       mesh.receiveShadow = true
