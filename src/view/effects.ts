@@ -35,13 +35,13 @@ import { fromSeed, next, type RngState } from '../core/rng'
 import { pickupHex } from './palette'
 import { weaponFor } from '../content/weapons'
 import { tuningFor } from '../content/vehicles'
-import type { Pickup, Projectile, SimEvent, Vehicle } from '../sim'
+import type { Pickup, PickupId, Projectile, SimEvent, Vehicle } from '../sim'
 
 const MAX_TRACERS = 64
 const MAX_BLASTS = 12
 const MAX_ROCKETS = 24
 const MAX_MINES = 24
-const MAX_CRATES = 16
+export const MAX_CRATES = 16
 const MAX_SMOKE = 48
 const MAX_SPARKS = 128
 const MAX_DEBRIS = 64
@@ -157,6 +157,122 @@ function missileGeometry(): BufferGeometry {
   const merged = mergeGeometries(parts, false)
   if (merged === null) throw new Error('failed to build the missile geometry')
   return merged
+}
+
+/**
+ * What a pickup looks like: the thing itself, not a box painted its colour.
+ *
+ * The rocket crate now shows THE ROCKET — the same `missileGeometry` the
+ * projectile flies with — so what you pick up and what you fire are visibly one
+ * object. Same argument as the live car on the select screen: a stand-in drifts
+ * from the real thing the moment either changes, and nobody notices.
+ *
+ * Colour is kept. Silhouette says which weapon, colour still ties the pickup to
+ * its HUD pip and its ammo counter, and those two channels are worth more
+ * together than either alone — especially at the far end of a 180m arena where
+ * a missile is a few pixels of silhouette and the tint is what survives.
+ *
+ * Cached per kind: eight crate slots share whichever geometries they need, and a
+ * slot only rebuilds when the pickup it is standing in for changes weapon.
+ */
+/**
+ * The slow hover a crate rides on, in metres above its spawn point.
+ *
+ * Exported because `pickupTags.ts` has to ride the exact same curve: its glow
+ * and its label hang off this height, and a second copy of the formula is a
+ * copy that drifts the first time either is tuned.
+ *
+ * PHASED ON THE PICKUP'S ID, not on its index in any array. Those are the same
+ * number only while every crate is available — `pickupTags` skips the ones on
+ * their respawn timer, so its slots compact and its indices stop matching the
+ * ones here. Keying both on identity is what makes the two impossible to get
+ * out of step; the first version took an index and the glow detached from its
+ * crate the moment anybody collected anything.
+ */
+export function crateLift(id: PickupId, tick: number): number {
+  return 1.1 + Math.sin(tick * 0.04 + id) * 0.18
+}
+
+const pickupShapes = new Map<string, BufferGeometry>()
+
+function buildPickupShape(key: string): BufferGeometry {
+  switch (key) {
+    case 'rocket': {
+      // Scaled up from flight size. A rocket is thin, and a thin thing is far
+      // harder to spot across an arena than the 1.5m cube it replaces — the
+      // shape has to carry the same "there is something here" at 80m.
+      const rocket = missileGeometry()
+      rocket.scale(1.5, 1.5, 1.5)
+      rocket.rotateZ(Math.PI / 2)
+      return rocket
+    }
+    case 'homingMissile': {
+      // The same airframe with a seeker head, because a homing missile IS a
+      // rocket that can see. Reading them as related is correct; reading them
+      // as identical is not, so the nose ring is the tell.
+      const parts: BufferGeometry[] = []
+      const body = missileGeometry()
+      body.scale(1.5, 1.5, 1.5)
+      parts.push(body)
+
+      const seeker = new TorusGeometry(0.2, 0.07, 6, 12)
+      seeker.rotateY(Math.PI / 2)
+      seeker.translate(0, 0, 0.95)
+      parts.push(seeker)
+
+      const merged = mergeGeometries(parts, false)
+      if (merged === null) throw new Error('failed to build the homing pickup')
+      merged.rotateZ(Math.PI / 2)
+      return merged
+    }
+    case 'mine': {
+      // The mine as laid, plus the prongs. On the floor a mine is a disc you
+      // are not supposed to notice; as a pickup it has to advertise itself.
+      const parts: BufferGeometry[] = []
+      const body = new CylinderGeometry(0.85, 0.95, 0.4, 12)
+      parts.push(body)
+      for (let i = 0; i < 5; i++) {
+        const prong = new CylinderGeometry(0.05, 0.05, 0.34, 5)
+        prong.translate(0.5, 0.32, 0)
+        prong.rotateY((i * Math.PI * 2) / 5)
+        parts.push(prong)
+      }
+      const merged = mergeGeometries(parts, false)
+      if (merged === null) throw new Error('failed to build the mine pickup')
+      return merged
+    }
+    case 'machineGun': {
+      // An ammunition box: still a box, but a box with a lid and a strap, which
+      // is the difference between a container and a placeholder.
+      const parts: BufferGeometry[] = []
+      const body = new BoxGeometry(1.5, 0.9, 0.95)
+      parts.push(body)
+      const lid = new BoxGeometry(1.56, 0.14, 1.0)
+      lid.translate(0, 0.5, 0)
+      parts.push(lid)
+      for (const x of [-0.45, 0.45]) {
+        const band = new BoxGeometry(0.12, 0.96, 1.02)
+        band.translate(x, 0, 0)
+        parts.push(band)
+      }
+      const merged = mergeGeometries(parts, false)
+      if (merged === null) throw new Error('failed to build the ammo pickup')
+      return merged
+    }
+    default:
+      // health and armour, still crates. Deliberately left for their own pass:
+      // a health pickup wants a shape that reads as "repair", and inventing one
+      // in passing is how you get a green box with a cross on it.
+      return new BoxGeometry(1.5, 1.5, 1.5)
+  }
+}
+
+function pickupShape(key: string): BufferGeometry {
+  const cached = pickupShapes.get(key)
+  if (cached !== undefined) return cached
+  const built = buildPickupShape(key)
+  pickupShapes.set(key, built)
+  return built
 }
 
 export class Effects {
@@ -404,6 +520,7 @@ export class Effects {
       const key = pickup.kind === 'weapon' ? (pickup.weapon ?? '') : pickup.kind
       if (this.crateKeys[i] !== key) {
         this.crateKeys[i] = key
+        mesh.geometry = pickupShape(key)
         const material = mesh.material as MeshStandardMaterial
         const hex = pickupHex(key)
         material.color.setHex(hex)
@@ -414,7 +531,7 @@ export class Effects {
 
       // A slow bob and turn, so a crate reads as collectable rather than as
       // scenery you should be avoiding.
-      mesh.position.set(pickup.pos.x, pickup.pos.y + 1.1 + Math.sin(tick * 0.04 + i) * 0.18, pickup.pos.z)
+      mesh.position.set(pickup.pos.x, pickup.pos.y + crateLift(pickup.id, tick), pickup.pos.z)
       mesh.rotation.y += dt * 0.8
     }
     for (let i = inUse; i < this.crates.length; i++) this.crates[i]!.visible = false

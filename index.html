@@ -87,7 +87,7 @@
       /* ── special ─────────────────────────────────────────────────────── */
       .hud-special {
         display: grid;
-        grid-template-columns: 6px 1fr auto;
+        grid-template-columns: 26px 1fr auto;
         align-items: center;
         gap: 0 8px;
         padding: 2px 0;
@@ -96,12 +96,14 @@
         letter-spacing: 0.06em;
         font-variant-numeric: tabular-nums;
       }
-      /* The pip is the crate colour and is always lit — it is a legend, not a
-         cursor. Selection is carried by brightness and a rule instead, so the
-         two facts never compete for the same pixel. */
-      .hud-pip { height: 7px; border-radius: 1px; opacity: 0.5; }
+      /* The icon is the weapon's outline in the crate's colour, and it is
+         always lit — it is a legend, not a cursor. Selection is carried by
+         brightness and a rule instead, so the two facts never compete for the
+         same pixel. */
+      .hud-icon { display: block; opacity: 0.55; }
+      .hud-icon svg { display: block; width: 26px; height: 12px; }
       .hud-special.is-selected { color: #e8edf3; }
-      .hud-special.is-selected .hud-pip { opacity: 1; }
+      .hud-special.is-selected .hud-icon { opacity: 1; }
       .hud-special.is-empty { color: #4a5461; }
       .hud-special.is-empty .hud-special-ammo { color: #ef4444; }
       /* The lock line reserves its row whether or not it has text. A block that grows

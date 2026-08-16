@@ -28,6 +28,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { ChaseCamera, type CameraTuning } from './camera'
 import { Effects } from './effects'
 import { HealthBars } from './healthBars'
+import { PickupTags } from './pickupTags'
 import { VehicleView } from './vehicleView'
 import { loadCarModels, modelsReady } from './carModels'
 import { liveryOf } from './palette'
@@ -236,6 +237,7 @@ export class Renderer {
   readonly chase: ChaseCamera
   readonly effects: Effects
   readonly healthBars: HealthBars
+  readonly pickupTags: PickupTags
 
   private readonly views = new Map<number, VehicleView>()
   private readonly canvas: HTMLCanvasElement
@@ -277,6 +279,7 @@ export class Renderer {
     this.buildArena(arena)
     this.effects = new Effects(this.scene)
     this.healthBars = new HealthBars(this.scene)
+    this.pickupTags = new PickupTags(this.scene)
     this.resize()
   }
 
@@ -607,6 +610,12 @@ export class Renderer {
     this.effects.syncSmoke(current.vehicles, dt)
     this.effects.syncProjectiles(current.projectiles)
     this.effects.syncPickups(current.pickups, current.tick, dt)
+    this.pickupTags.update(
+      current.pickups,
+      current.tick,
+      current.vehicles.find((v) => v.id === followId),
+      this.chase.camera,
+    )
     this.effects.syncLock(
       current.vehicles.find((v) => v.id === followId),
       current.vehicles,

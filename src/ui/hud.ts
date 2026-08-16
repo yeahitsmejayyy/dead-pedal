@@ -132,6 +132,43 @@ const CORNERS = [
   [-1, 1],
 ] as const
 
+/**
+ * A weapon's outline, matching the pickup mesh it stands for.
+ *
+ * Hand-drawn paths rather than a render of the real geometry. A 3D preview per
+ * HUD row would mean three more render targets updating every frame for
+ * something 18 pixels wide, and at that size a silhouette is all that survives
+ * anyway — so the honest version is to draw the silhouette directly and keep
+ * it matched by eye when the meshes change.
+ *
+ * `currentColor` throughout, so the row sets one colour and everything in the
+ * icon follows it.
+ */
+function weaponIcon(id: string): string {
+  const open = '<svg viewBox="0 0 26 12" aria-hidden="true" focusable="false">'
+  switch (id) {
+    case 'rocket':
+      return `${open}
+        <path d="M4 4h12l6 2-6 2H4z" fill="currentColor"/>
+        <path d="M4 4L1 1v10l3-3z" fill="currentColor"/>
+      </svg>`
+    case 'homingMissile':
+      // The same airframe with a seeker ring, exactly as the pickup mesh does it.
+      return `${open}
+        <path d="M4 4h11l4 2-4 2H4z" fill="currentColor"/>
+        <path d="M4 4L1 1v10l3-3z" fill="currentColor"/>
+        <circle cx="19" cy="6" r="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </svg>`
+    case 'mine':
+      return `${open}
+        <ellipse cx="13" cy="7.5" rx="7" ry="3.2" fill="currentColor"/>
+        <path d="M13 4.3V1M8 5.2L6 2.6M18 5.2l2-2.6" stroke="currentColor" stroke-width="1.4" fill="none"/>
+      </svg>`
+    default:
+      return `${open}<rect x="4" y="2" width="18" height="8" rx="1" fill="currentColor"/></svg>`
+  }
+}
+
 export function createHud(root: HTMLElement, options: HudOptions): Hud {
   const { playerId, arenaHalf, roundSeconds } = options
 
@@ -153,12 +190,20 @@ export function createHud(root: HTMLElement, options: HudOptions): Hud {
       <div class="hud-specials">
         <div class="hud-label">SPECIAL <b class="hud-key">L</b></div>
         ${SPECIAL_IDS.map(
-          // The pip carries the crate's colour, not the selection state. That
-          // is the whole point: the violet box on the far side of the arena is
-          // the homing missile, and you should be able to know that without
-          // driving through it first.
+          /**
+           * A silhouette AND the crate's colour, neither of them the selection
+           * state.
+           *
+           * It used to be a colour swatch alone, on the reasoning that the
+           * violet box across the arena is the homing missile and you should
+           * know that without driving through it. That reasoning expired the
+           * day the pickups stopped being boxes: they are now the weapons
+           * themselves, so the thing to recognise is a shape. The HUD teaches
+           * both halves of the mapping — this outline is the object you are
+           * looking for, in the colour it will be.
+           */
           (id) => `<div class="hud-special" data-special="${id}">
-            <i class="hud-pip" style="background:${pickupCss(id)}"></i>
+            <i class="hud-icon" style="color:${pickupCss(id)}">${weaponIcon(id)}</i>
             <span class="hud-special-name">${WEAPONS[id].label}</span>
             <span class="hud-special-ammo">0</span>
           </div>`,
