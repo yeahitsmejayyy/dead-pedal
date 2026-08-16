@@ -16,7 +16,7 @@
 A car combat game that runs in a browser. Four armoured cars, one dirt arena, five minutes, most
 kills wins. TypeScript and three.js, no game engine and no physics library.
 
-**▶ [Play it](#)** · *(not deployed yet — see [Running it](#running-it))*
+**▶ [Play the demo](https://dead-pedal.vercel.app)** · *(desktop only — keyboard or gamepad, no touch controls)*
 
 ---
 

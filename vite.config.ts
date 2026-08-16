@@ -4,6 +4,17 @@ import { defineConfig } from 'vite'
 const port = Number(process.env.PORT) || 5173
 
 export default defineConfig({
+  /**
+   * GitHub Pages serves this repo at `/dead-pedal/`, not at a domain root.
+   *
+   * Everything vite emits — the module bundle, the CSS, and any hashed asset it
+   * fingerprints — gets this prefix baked into the URL. Files under `public/`
+   * do NOT: vite copies those verbatim and never rewrites references to them,
+   * so anything loading them at runtime has to resolve its own path against
+   * `import.meta.env.BASE_URL`.
+   */
+  base: process.env.GITHUB_ACTIONS ? '/dead-pedal/' : '/',
+
   server: {
     port,
     strictPort: true,
