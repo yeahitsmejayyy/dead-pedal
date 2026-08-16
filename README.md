@@ -1,10 +1,4 @@
 <p align="center">
-  <img src="docs/art/cover.png" alt="Dead Pedal" width="100%">
-</p>
-
-# Dead Pedal
-
-<p align="center">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-FF6100?style=flat-square" alt="MIT license"></a>
   <img src="https://img.shields.io/badge/TypeScript-6-FF6100?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 6">
   <img src="https://img.shields.io/badge/three.js-0.185-FF6100?style=flat-square&logo=threedotjs&logoColor=white" alt="three.js 0.185">
@@ -12,6 +6,12 @@
   <img src="https://img.shields.io/badge/Vitest-4-FF6100?style=flat-square&logo=vitest&logoColor=white" alt="Vitest 4">
   <img src="https://img.shields.io/badge/Node-%E2%89%A522.12-FF6100?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node 22.12 or newer">
 </p>
+
+<p align="center">
+  <img src="docs/art/cover.png" alt="Dead Pedal" width="100%">
+</p>
+
+# Dead Pedal
 
 A car combat game that runs in a browser. Four armoured cars, one dirt arena, five minutes, most
 kills wins. TypeScript and three.js, no game engine and no physics library.
