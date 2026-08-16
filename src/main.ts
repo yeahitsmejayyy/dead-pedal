@@ -30,6 +30,7 @@ import { createDebugPanel } from './ui/debug'
 import { createHud, type HudBlip, type HudLock } from './ui/hud'
 import { createTitle } from './ui/title'
 import { createSelect } from './ui/select'
+import { createSoundToggle } from './ui/sound'
 import { playerLivery } from './view/palette'
 import { createAudio } from './audio'
 
@@ -111,7 +112,11 @@ const hud = createHud(hudRoot, {
  * the suite would survive without this; it is here for the CI core and because
  * the player needs a real off switch regardless.
  */
-const audio = createAudio({ silent: new URLSearchParams(location.search).has('silent') })
+const audio = createAudio({
+  silent: new URLSearchParams(location.search).has('silent'),
+  // Off until the player says otherwise. See `ui/sound.ts`.
+  startMuted: true,
+})
 
 // No modal, no speaker button to hunt for: the W that starts the car is the
 // gesture. `arm` is idempotent, so firing it on every key and click is fine.
@@ -131,7 +136,35 @@ for (const kind of ['keydown', 'pointerdown'] as const) {
  * was going to press START anyway.
  */
 audio.arm()
-audio.startMusic()
+
+/**
+ * The sound switch, and the single place that decides whether audio is on.
+ *
+ * Nothing starts playing at boot any more. The music fetch is deferred too —
+ * 3.7MB that a player who never turns sound on should never pay for.
+ *
+ * `arm()` still fires on every gesture above, so the AudioContext is legal and
+ * ready by the time this is pressed; the press itself is also a gesture, so
+ * even a first-ever click works.
+ */
+const soundRoot = document.getElementById('sound')
+if (soundRoot === null) throw new Error('missing #sound')
+
+function setSound(on: boolean): void {
+  if (on) {
+    audio.arm()
+    if (audio.muted()) audio.toggleMute()
+    audio.startMusic()
+  } else if (!audio.muted()) {
+    audio.toggleMute()
+  }
+  sound.set(on)
+}
+
+const sound = createSoundToggle(soundRoot, {
+  onChange: setSound,
+  onHover: () => audio.playUi('menuHover'),
+})
 /**
  * The title screen, and the two reasons the sim does not run behind it.
  *
@@ -239,27 +272,55 @@ if (started) {
 let paused = false
 
 window.addEventListener('keydown', (event) => {
-  // The menu owns the keyboard while it is up. Pausing a game that has not
-  // begun leaves you on a paused title screen with no way to read that state.
+  /**
+   * The sound keys work everywhere; the game keys do not.
+   *
+   * Music starts playing on the title screen, so binding mute and track-cycle
+   * behind "the match has begun" left the two menus with audio you could hear
+   * and no key that would touch it. Pause and the engine toggle stay gated —
+   * pausing a game that has not started leaves you on a paused title screen
+   * with no way to read that state, and the engine is not running to toggle.
+   */
+  if (event.code === 'KeyM') audio.cycleMusic()
+  // Routed through the same switch as the button, so the icon can never
+  // disagree with what you are hearing.
+  if (event.code === 'KeyN') setSound(!sound.isOn())
+
   if (!started) return
   if (event.code === 'KeyP') {
     paused = !paused
     audio.setPaused(paused)
     hud.setPaused(paused)
   }
-  // M cycles the soundtrack: track 1 -> 2 -> 3 -> off. Mute moved to N to make
-  // room for it, because one key covering "different song" and "no song" is
-  // most of what anyone wants from game music.
-  if (event.code === 'KeyM') audio.cycleMusic()
-  if (event.code === 'KeyN') audio.toggleMute()
   // E swaps the recorded engine loops for the oscillator bank. Both keep
   // running, so the switch lands at the revs you were already at.
   if (event.code === 'KeyE') audio.toggleEngine()
 })
 // rAF stops when the tab is backgrounded, so `update` stops with it and the
 // engine would otherwise drone on at whatever revs the last frame left.
+/**
+ * True only when THIS handler did the muting.
+ *
+ * Without it the unmute below would also undo a mute the player asked for: tab
+ * out of a deliberately silent game, tab back, and the sound returns
+ * uninvited. The flag is the difference between restoring state and overwriting
+ * it.
+ */
+let mutedByHiding = false
+
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && !audio.muted()) audio.toggleMute()
+  if (document.hidden) {
+    if (audio.muted()) return
+    audio.toggleMute()
+    mutedByHiding = true
+    return
+  }
+  // ...and back on. This half was simply missing, which made a background tab a
+  // one-way trip: the engine stopped droning as intended and then nothing ever
+  // came back, for the rest of the session, until you found the N key.
+  if (!mutedByHiding) return
+  mutedByHiding = false
+  if (audio.muted()) audio.toggleMute()
 })
 
 const panel = createDebugPanel(

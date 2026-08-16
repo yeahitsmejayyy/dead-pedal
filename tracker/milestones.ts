@@ -250,6 +250,12 @@ export const MILESTONES: readonly Milestone[] = [
         note: '2.9s inside the 3s countdown, so it costs no play time. Opens 18m out and 0.85m up off the car\'s front quarter, then sweeps 150° round to the chase pose while rising and closing a 12° lens boost — a dolly and a zoom, not just a dolly. Smootherstep, so it spends the whole duration moving; the first attempt used a hard ease-out and finished travelling in half a second, which read as underwhelming however far it went. The path is parameterised to END on the ordinary chase pose exactly rather than near it, which is what stops it popping on the handoff frame.',
       },
       {
+        id: 'm8-sound-toggle',
+        label: 'On-screen sound toggle, off by default',
+        done: true,
+        note: 'The only arrangement that cannot fail. A browser will not let a page make noise before a gesture, and a page that tries anyway fails silently — so the click that turns sound ON is itself the gesture. Also defers the 3.7MB music fetch until someone asks for it. N routes through the same switch, so the icon cannot disagree with the mixer.',
+      },
+      {
         id: 'm8-flow',
         label: 'Screen state machine: title → select → match → result → back',
         done: true,

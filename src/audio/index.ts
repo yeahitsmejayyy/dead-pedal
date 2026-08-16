@@ -165,6 +165,14 @@ type Voice = {
 export type AudioOptions = {
   readonly silent?: boolean
   readonly mix?: MixTuning
+  /**
+   * Start muted, so the page makes no sound until the player asks for it.
+   *
+   * Different from `silent`, which builds no AudioContext at all and cannot be
+   * undone. This is a real mixer that happens to be turned down, ready to come
+   * up the instant the sound button is pressed.
+   */
+  readonly startMuted?: boolean
 }
 
 const SILENT: Audio = Object.freeze({
@@ -270,7 +278,7 @@ export function createAudio(options: AudioOptions = {}): Audio {
   const cursor = new Map<SoundId, number>()
   const lastStarted = new Map<SoundId, number>()
   let isArmed = false
-  let isMuted = false
+  let isMuted = options.startMuted === true
   let isPaused = false
   let loadState = 'loading'
   let lastMineTick = 0
@@ -413,11 +421,41 @@ export function createAudio(options: AudioOptions = {}): Audio {
   }
 
   return {
+    /**
+     * Try to bring the AudioContext up. Safe — and necessary — to call often.
+     *
+     * A context built without a prior user gesture starts `suspended`, and
+     * `resume()` only succeeds from inside a real user activation. So this is
+     * called speculatively at boot AND from every keydown and pointerdown, and
+     * the first one that happens to be a gesture is the one that works.
+     *
+     * IT LATCHES ON SUCCESS, NOT ON BEING CALLED, and that distinction is the
+     * whole bug this replaced. The old version set `isArmed = true` on entry
+     * and early-returned ever after: the speculative boot call burned the flag,
+     * its `resume()` was rejected by the autoplay policy and swallowed, and
+     * every later gesture returned immediately without retrying. The game was
+     * silent for the entire session with no way back. It never showed up in
+     * development because the dev browser permits autoplay, so the context was
+     * already `running` and the retry was never needed.
+     *
+     * `resume()` is called synchronously here, before any await. Safari only
+     * honours it while the activation is still on the stack.
+     */
     arm(): void {
-      if (isArmed) return
-      isArmed = true
-      void ctx.resume().catch(() => undefined)
-      master.gain.setTargetAtTime(level(), ctx.currentTime, 0.05)
+      if (isArmed && ctx.state === 'running') return
+
+      const settle = (): void => {
+        if (ctx.state !== 'running') return
+        isArmed = true
+        master.gain.setTargetAtTime(level(), ctx.currentTime, 0.05)
+      }
+
+      // Already permitted — nothing to wait for.
+      if (ctx.state === 'running') {
+        settle()
+        return
+      }
+      void ctx.resume().then(settle, () => undefined)
     },
     setPaused(next: boolean): void {
       isPaused = next

@@ -869,6 +869,58 @@
         #select.is-leaving .select-bay { animation: none; }
       }
 
+      /* ── sound toggle ─────────────────────────────────────────────────
+         Bottom-right, which is the one corner nothing else claims: the HUD is
+         top-left, the radar bottom-left, the key legend along the bottom, and
+         the debug panel down the whole right-hand side from the top.
+
+         Above the menu overlays, because it has to be reachable ON the title
+         screen — that is where a player decides whether they want sound at all,
+         and it is the click that makes the audio context legal. */
+      #sound {
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        z-index: 30;
+      }
+
+      .sound-button {
+        display: grid;
+        place-items: center;
+        width: 42px;
+        height: 42px;
+        padding: 0;
+        color: #8b95a3;
+        background: rgba(11, 13, 16, 0.55);
+        border: 1px solid #2b3440;
+        border-radius: 3px;
+        cursor: pointer;
+        transition: color 120ms linear, border-color 120ms linear, background 120ms linear;
+      }
+      .sound-button svg { width: 22px; height: 22px; }
+      .sound-button svg path {
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.7;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      /* The speaker cone is the one filled shape, so the icon still reads as a
+         speaker at 22px where thin outlines start to disappear. */
+      .sound-button svg path:first-child { fill: currentColor; }
+
+      .sound-button:hover { color: #d8dee6; border-color: #4a5461; background: rgba(11, 13, 16, 0.8); }
+      .sound-button:focus-visible { outline: 2px solid #ff8c1a; outline-offset: 2px; }
+
+      /* Off: waves hidden, cross shown. On: the reverse, lit in boost orange so
+         the state is carried by colour AND by shape rather than colour alone. */
+      .sound-wave { opacity: 0; }
+      .sound-cross { opacity: 1; }
+      #sound.is-on .sound-wave { opacity: 1; }
+      #sound.is-on .sound-cross { opacity: 0; }
+      #sound.is-on .sound-button { color: #ff8c1a; border-color: #6a4a22; }
+      #sound.is-on .sound-button:hover { color: #ffb055; border-color: #ff8c1a; }
+
       .tp-dfwv { z-index: 10; }
     </style>
   </head>
@@ -877,6 +929,7 @@
     <div id="hud"></div>
     <div id="title"></div>
     <div id="select"></div>
+    <div id="sound"></div>
     <div id="keys">
       <div><b>W&nbsp;S</b> throttle / brake &nbsp;·&nbsp; <b>A&nbsp;D</b> steer</div>
       <div><b>Space</b> handbrake &nbsp;·&nbsp; <b>C</b> look back &nbsp;·&nbsp; <b>R</b> reset &nbsp;·&nbsp; <b>M</b> music &nbsp;·&nbsp; <b>N</b> mute &nbsp;·&nbsp; <b>P</b> pause &nbsp;·&nbsp; <b>E</b> engine</div>
