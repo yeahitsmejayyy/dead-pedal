@@ -210,7 +210,7 @@ export const MILESTONES: readonly Milestone[] = [
         id: 'm7-art',
         label: 'Art pass: vehicle models, arena dressing, one atlas',
         done: false,
-        note: 'Blocked on a decision: push procedural geometry further, or wire real glTF models.',
+        note: 'Vehicles done. Arena slice 1 done — burning-dusk sky dome, seeded silhouette city with smoke, tiled high-desert dirt (ambientCG Ground067, CC0), dusk lighting and fog. Left: chain-link walls, dirt ramps, and props along the wall.',
       },
       {
         id: 'm7-music',

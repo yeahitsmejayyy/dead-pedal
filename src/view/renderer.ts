@@ -6,15 +6,17 @@
  */
 import {
   BoxGeometry,
-  BufferGeometry,
   Color,
+  BufferGeometry,
   DirectionalLight,
   Float32BufferAttribute,
-  GridHelper,
   HemisphereLight,
   Mesh,
   MeshStandardMaterial,
+  Fog,
   PlaneGeometry,
+  RepeatWrapping,
+  TextureLoader,
   Scene,
   WebGLRenderer,
 } from 'three'
@@ -28,10 +30,50 @@ import { HealthBars } from './healthBars'
 import { VehicleView } from './vehicleView'
 import { loadCarModels, modelsReady } from './carModels'
 import { liveryOf } from './palette'
+import { createSky } from './sky'
 
-const GROUND = new MeshStandardMaterial({ color: 0x272d36, roughness: 1 })
-const WALL = new MeshStandardMaterial({ color: 0x2a323c, roughness: 0.8 })
-const BLOCK = new MeshStandardMaterial({ color: 0x4c5666, roughness: 0.75 })
+/**
+ * The arena floor: high-desert dirt, tiled.
+ *
+ * Loaded rather than a flat colour, and it is the one surface that earns a
+ * photographed texture — it is underfoot, you read your speed off it, and a
+ * plain plane gives the eye nothing to measure against. `#272d36` before this
+ * was cool concrete blue-grey on a floor the design had already decided was
+ * dirt.
+ *
+ * The repeat is set once the arena size is known, in `buildArena`. Anisotropy
+ * matters more than resolution here: the floor is viewed at a grazing angle at
+ * speed, which is exactly the case bilinear filtering smears into mud.
+ */
+const groundTextures = new TextureLoader()
+/**
+ * How many ground maps are still in flight.
+ *
+ * `TextureLoader.load` is asynchronous, and a frame drawn before it resolves
+ * shows an untextured floor. That is invisible in play — it resolves in
+ * milliseconds — but it is fatal to the visual-regression fixture, which
+ * captures ONE frame and compares it byte for byte. Caught the hard way: the
+ * first re-recorded baseline after this change failed on its very next run.
+ *
+ * Counted down on error as well as success. A 404 that leaves the counter
+ * stuck would hang the test suite waiting for a texture that is never coming.
+ */
+let groundPending = 2
+const groundLoaded = (): void => {
+  groundPending = Math.max(0, groundPending - 1)
+}
+
+const GROUND = new MeshStandardMaterial({
+  map: groundTextures.load('tex/dirt-color.jpg', groundLoaded, undefined, groundLoaded),
+  normalMap: groundTextures.load('tex/dirt-normal.jpg', groundLoaded, undefined, groundLoaded),
+  roughness: 0.95,
+  // Left untinted. An earlier pass warmed it to #c9a888, which was warm dirt
+  // under warm light under warm fog — three multiplications of the same hue,
+  // and the floor came out fluorescent.
+  color: 0xffffff,
+})
+const WALL = new MeshStandardMaterial({ color: 0x4a4038, roughness: 0.85 })
+const BLOCK = new MeshStandardMaterial({ color: 0x6b6055, roughness: 0.8 })
 const RAMP = new MeshStandardMaterial({ color: 0x6b5a3e, roughness: 0.85 })
 /**
  * Boost chevrons, painted up a ramp's short back incline.
@@ -150,7 +192,23 @@ export class Renderer {
     this.renderer.shadowMap.enabled = true
 
     this.scene = new Scene()
-    this.scene.background = new Color(0x0b0d10)
+    /**
+     * No background colour: the sky dome is the background now.
+     *
+     * Fog is set to the horizon's own amber so distant geometry dissolves into
+     * the sky rather than ending at a hard line.
+     *
+     * It starts at 420m, well BEYOND the arena. A first pass began it at 210m
+     * and the plate is 360m across, so the far half of the playing field was
+     * hazed orange — the arena you are driving in has to stay crisp, and fog is
+     * for what lies past it. Turned off entirely on `sky.ts`, which is meant to
+     * be kilometres away.
+     */
+    // Belt and braces behind the dome. If geometry ever fails to cover a
+    // corner of the frame the player sees dusk, not the black of an empty
+    // buffer — which is exactly how the far-plane clipping bug presented.
+    this.scene.background = new Color(0x2a1410)
+    this.scene.fog = new Fog(0x6d3a1e, 420, 1600)
 
     this.chase = new ChaseCamera(canvas.clientWidth / canvas.clientHeight, cameraTuning)
 
@@ -167,10 +225,32 @@ export class Renderer {
 
   private buildArena(arena: Arena): void {
     // Two realtime lights, the budget in PLAN.md §6.
-    this.scene.add(new HemisphereLight(0x9fb4cc, 0x1a1a20, 1.1))
+    /**
+     * Dusk, not night. Sky term is the burning horizon and the ground term is
+     * the warm bounce coming back off the dirt, which is what stops the shadow
+     * sides going flat black the way they did under the old cool-blue pair.
+     *
+     * Muted from a first pass at full-saturation `#ff7a33`. A strong single-hue
+     * ambient drags every surface to the same colour, and the four car liveries
+     * — the one thing that must stay distinguishable — went with it.
+     *
+     * The GROUND term then had to come up hard. With the sun this low most of
+     * the arena faces away from it, and at `#241812` the ramps went to
+     * silhouette — a tent-shaped hole in the middle of the plate that read as
+     * missing geometry rather than as a thing you drive up.
+     */
+    this.scene.add(new HemisphereLight(0xd4794a, 0x3d2a1e, 1.25))
 
-    const sun = new DirectionalLight(0xfff2df, 1.5)
-    sun.position.set(60, 120, 40)
+    /**
+     * Low and warm, standing in for the sun that is setting behind the city.
+     *
+     * Dropped from 120m to 62m so the shadows rake long across the plate
+     * instead of pooling under the cars — the single cheapest way to say
+     * "late in the day" without touching anything else. Not lower: at 34m the
+     * ramps were lit only on their far faces and went black from the camera.
+     */
+    const sun = new DirectionalLight(0xffc79a, 1.9)
+    sun.position.set(120, 62, 60)
     sun.castShadow = true
     sun.shadow.mapSize.set(1024, 1024)
     const span = 60
@@ -181,23 +261,33 @@ export class Renderer {
     sun.shadow.camera.far = 400
     this.scene.add(sun)
 
+    createSky(this.scene, { arenaHalf: Math.max(arena.halfExtents.x, arena.halfExtents.z) })
+
     const { x: hx, z: hz } = arena.halfExtents
 
     // Deliberately far larger than the arena. The camera sits outside the walls
     // whenever the car is against one, and a floor that stopped at the wall left
     // the near ground reading as a void.
+    // One tile every 6 metres. Small enough to read as grit at walking pace,
+    // large enough that the repeat is not obvious from the chase camera.
+    const tile = 6
+    for (const map of [GROUND.map, GROUND.normalMap]) {
+      if (map === null) continue
+      map.wrapS = RepeatWrapping
+      map.wrapT = RepeatWrapping
+      map.repeat.set((hx * 8) / tile, (hz * 8) / tile)
+      map.anisotropy = this.renderer.capabilities.getMaxAnisotropy()
+    }
+
     const floor = new Mesh(new PlaneGeometry(hx * 8, hz * 8), GROUND)
     floor.rotation.x = -Math.PI / 2
     floor.position.y = arena.groundY
     floor.receiveShadow = true
     this.scene.add(floor)
 
-    // The grid is the speed reference. Without it a flat plane gives your eye
-    // nothing to measure against and every handling judgement is guesswork —
-    // which is why it covers more than the playable area.
-    const grid = new GridHelper(hx * 4, Math.round((hx * 4) / 5), 0x76889d, 0x495566)
-    grid.position.y = arena.groundY + 0.02
-    this.scene.add(grid)
+    // The grid helper is gone. It existed because a flat untextured plane gives
+    // the eye nothing to measure speed against; tiled dirt does that job now,
+    // and does it without looking like a level editor.
 
     // The arena's static geometry is merged per material rather than added
     // mesh by mesh. Fifteen boxes that never move and never change colour were
@@ -314,6 +404,11 @@ export class Renderer {
   }
 
   /** True once the car models have loaded. The visual test waits on this. */
+  /** True once every arena texture has resolved, however each turned out. */
+  texturesLoaded(): boolean {
+    return groundPending === 0
+  }
+
   modelsLoaded(): boolean {
     return modelsReady()
   }

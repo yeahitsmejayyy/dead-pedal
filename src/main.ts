@@ -362,7 +362,7 @@ if (import.meta.env.DEV) {
       particles: () => renderer.effects.particleCounts(),
       wheelSpin: () => renderer.wheelSpin(PLAYER),
       playerLivery: () => playerLivery(),
-      modelsLoaded: (): boolean => renderer.modelsLoaded(),
+      modelsLoaded: (): boolean => renderer.modelsLoaded() && renderer.texturesLoaded(),
       audio: () => ({ ...audio.state(), armed: audio.armed(), muted: audio.muted() }),
       // Lets the e2e suite park the opposition. Tests about ramming and
       // destruction are about those mechanics, not about whether a bot will
