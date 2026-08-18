@@ -26,8 +26,10 @@ import {
 } from './sim'
 import { DEFAULT_CAMERA } from './view/camera'
 import { Renderer } from './view/renderer'
-import { createDebugPanel } from './ui/debug'
+import type { DebugPanel } from './ui/debug'
 import { createHud, type HudBlip, type HudLock } from './ui/hud'
+import { createMenu } from './ui/menu'
+import { isBound } from './content/controls'
 import { createTitle } from './ui/title'
 import { createSelect } from './ui/select'
 import { createSoundToggle } from './ui/sound'
@@ -271,6 +273,55 @@ if (started) {
  */
 let paused = false
 
+const menuRoot = document.getElementById('menu')
+if (menuRoot === null) throw new Error('missing #menu')
+
+/**
+ * Back to the title, from a match in progress.
+ *
+ * The only backwards edge in the app. Every other transition here runs
+ * title → select → arena and never returns, so `started` and `showArena` had
+ * only ever gone false → true and the two menus had only ever been entered from
+ * boot. Going the other way means putting all of that back by hand: unfreeze
+ * first (a paused world resumed later would resume into a match nobody is in),
+ * throw the world away, stop drawing, and re-show both menus in the order the
+ * title screen expects — select underneath, title over it.
+ */
+function quitToTitle(): void {
+  paused = false
+  audio.setPaused(false)
+  hud.setPaused(false)
+
+  reset()
+  started = false
+  showArena = false
+
+  document.body.classList.add('is-title')
+  select.show()
+  title.show()
+}
+
+const menu = createMenu(menuRoot, {
+  state: () => ({ difficulty: botSettings.difficulty, sound: sound.isOn() }),
+  onOpen: () => {
+    paused = true
+    audio.setPaused(true)
+  },
+  onClose: () => {
+    paused = false
+    audio.setPaused(false)
+  },
+  onRestart: reset,
+  onQuit: quitToTitle,
+  onDifficultyChange: (key) => {
+    botSettings.difficulty = key
+    onDifficultyChanged()
+  },
+  onSoundToggle: setSound,
+  onMusicCycle: () => audio.cycleMusic(),
+  onHover: () => audio.playUi('menuHover'),
+})
+
 window.addEventListener('keydown', (event) => {
   /**
    * The sound keys work everywhere; the game keys do not.
@@ -281,16 +332,23 @@ window.addEventListener('keydown', (event) => {
    * pausing a game that has not started leaves you on a paused title screen
    * with no way to read that state, and the engine is not running to toggle.
    */
-  if (event.code === 'KeyM') audio.cycleMusic()
+  if (isBound('music', event.code)) audio.cycleMusic()
   // Routed through the same switch as the button, so the icon can never
   // disagree with what you are hearing.
-  if (event.code === 'KeyN') setSound(!sound.isOn())
+  if (isBound('mute', event.code)) setSound(!sound.isOn())
 
   if (!started) return
-  if (event.code === 'KeyP') {
-    paused = !paused
-    audio.setPaused(paused)
-    hud.setPaused(paused)
+  /**
+   * Escape and P both open the menu, and the menu is the pause.
+   *
+   * There used to be a bare PAUSED card here on P and nothing else — a second
+   * way to stop the game that looked different from the menu and meant the same
+   * thing. The card is gone; freezing the world is now something only the menu
+   * does, so there is exactly one stopped state and one way out of it.
+   */
+  if (isBound('menu', event.code)) {
+    event.preventDefault()
+    menu.toggle()
   }
   // E swaps the recorded engine loops for the oscillator bank. Both keep
   // running, so the switch lands at the revs you were already at.
@@ -323,15 +381,42 @@ document.addEventListener('visibilitychange', () => {
   if (audio.muted()) audio.toggleMute()
 })
 
-const panel = createDebugPanel(
-  vehicleTuning,
-  cameraTuning,
-  input.tuning,
-  reset,
-  botSettings,
-  onDifficultyChanged,
-  rebuildRoster,
-)
+/**
+ * The tuning panel. Development only, and genuinely absent otherwise.
+ *
+ * It is a workbench — live handling constants, telemetry, frame timings — and
+ * it used to sit over the arena for players too, who have no use for any of it
+ * and did not ask for a wall of sliders on top of the game.
+ *
+ * The import is dynamic on purpose. `import.meta.env.DEV` behind a STATIC
+ * import would hide the panel but still bundle tweakpane, which is a runtime
+ * dependency: the guard would cost every player the download and save them
+ * nothing. Awaited inside the branch, the whole module — and tweakpane with it —
+ * drops out of the production build.
+ *
+ * Null in production, so every use of it below is guarded rather than assumed.
+ *
+ * Deliberately NOT awaited at the top level. `await import(...)` here would make
+ * this whole module async, which delays everything after it — including the
+ * `__deadPedal` probe at the bottom that the e2e suite reads the instant the
+ * page loads. Two specs failed on exactly that before this was a `.then`, and
+ * they were right to: a dev-only panel must not change when the game is ready.
+ * The panel simply appears a few milliseconds into the first frame instead.
+ */
+let panel: DebugPanel | null = null
+if (import.meta.env.DEV) {
+  void import('./ui/debug').then((module) => {
+    panel = module.createDebugPanel(
+      vehicleTuning,
+      cameraTuning,
+      input.tuning,
+      reset,
+      botSettings,
+      onDifficultyChanged,
+      rebuildRoster,
+    )
+  })
+}
 
 /** Who last wrecked the player. Aims the death camera; cleared on respawn. */
 let killer: EntityId | null = null
@@ -356,6 +441,16 @@ if (import.meta.env.DEV) {
   Object.defineProperty(window, '__deadPedal', {
     value: {
       world: (): WorldState => current,
+      /**
+       * The pause FLAG, not the freeze.
+       *
+       * The freeze itself cannot be asserted in headless Chromium — frames are
+       * produced on demand there, so the sim sits still whatever the code says,
+       * and the long note at the top of title.spec.ts records that being
+       * measured rather than assumed. What a test can honestly check is that
+       * opening the menu sets the state the freeze is derived from.
+       */
+      paused: (): boolean => paused,
       drawCalls: (): number => renderer.drawCalls,
       cameraPosition: () => renderer.chase.camera.position.clone(),
       fov: (): number => renderer.chase.camera.fov,
@@ -646,6 +741,8 @@ function frame(now: number): void {
       match.phase === 'matchOver' ? match.matchWinner : match.roundWinner,
     )
 
+    // Skipped wholesale in production, where there is no panel to feed.
+    if (panel !== null) {
     const r = panel.readouts
     r.speedKph = Math.hypot(car.vel.x, car.vel.z) * 3.6
     r.forwardSpeed = car.forwardSpeed
@@ -671,13 +768,14 @@ function frame(now: number): void {
     r.targets = missileMode
       ? `${lockableTargets(car, current.vehicles, current.arena, HOLD_RULES).length} in range  (T)`
       : 'missile mode only'
+    }
   }
 
   // Tweakpane redraws are not free; ten times a second is plenty for a readout.
   refreshCountdown -= elapsed
   if (refreshCountdown <= 0) {
     refreshCountdown = 0.1
-    panel.refresh()
+    panel?.refresh()
   }
 
   requestAnimationFrame(frame)

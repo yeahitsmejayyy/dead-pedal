@@ -215,6 +215,11 @@ test.describe('M7 — the same seed draws the same frame', () => {
     // capture times out having rendered nothing wrong. Pause is the tool that
     // already exists for this: the sim stops, the renderer keeps drawing the
     // same held frame, so the canvas is both static and freshly painted.
+    //
+    // P now opens the in-game menu rather than raising a bare PAUSED card, and
+    // the menu IS the pause — same freeze, same held frame. What changed is that
+    // it also paints a full-screen scrim, which is why `#menu` joins the
+    // overlays hidden below. Without that the shot is the scrim, not the arena.
     await page.keyboard.press('p')
     await page.evaluate(() => (window as unknown as { __release: () => void }).__release())
     await page.waitForTimeout(150)
@@ -223,11 +228,11 @@ test.describe('M7 — the same seed draws the same frame', () => {
     //
     // `#scene` IS the canvas, but an element screenshot captures that REGION of
     // the viewport, compositing whatever DOM is painted over it. The canvas is
-    // full-viewport, so the shot arrived with the HUD, the key legend, the debug
-    // panel and the pause scrim in it: font rasterisation in a test that
-    // documents itself as excluding exactly that, and the scrim dimming the one
-    // thing being measured.
-    await page.addStyleTag({ content: '#hud, #keys, .tp-dfwv { display: none !important }' })
+    // full-viewport, so the shot arrived with the HUD, the debug panel and the
+    // pause scrim in it: font rasterisation in a test that documents itself as
+    // excluding exactly that, and the scrim dimming the one thing being
+    // measured.
+    await page.addStyleTag({ content: '#hud, #menu, .tp-dfwv { display: none !important }' })
     const shot = await page.locator('#scene').screenshot()
 
     // Recording FAILS rather than passing quietly. A visual test that writes its

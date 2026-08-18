@@ -149,9 +149,24 @@ test.describe('audio under the autoplay policy', () => {
     await expect(toggle).toHaveAttribute('aria-pressed', 'true')
     await expect.poll(async () => (await audioOf(page)).music, { timeout: 10_000 }).toMatch(/music-1/)
 
-    const on = await audioOf(page)
-    expect(on.armed, 'the click that enables sound is itself the user gesture').toBe(true)
-    expect(on.muted).toBe(false)
+    /**
+     * Polled, not read once.
+     *
+     * `arm()` calls `ctx.resume()` and sets the flag in the promise's callback,
+     * so `armed` is asynchronous by construction. Reading it a single time
+     * happened to work only because the `music` poll above usually took long
+     * enough to cover the gap — an incidental delay, not a guarantee, and one
+     * that shrinks whenever the dev server is warm from an earlier test in this
+     * file. The claim is unchanged: the click must arm the mixer. This just
+     * stops the claim resting on how fast the previous assertion returned.
+     */
+    await expect
+      .poll(async () => (await audioOf(page)).armed, {
+        timeout: 5_000,
+        message: 'the click that enables sound is itself the user gesture',
+      })
+      .toBe(true)
+    expect((await audioOf(page)).muted).toBe(false)
 
     // And back off again.
     await toggle.click()

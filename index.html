@@ -9,20 +9,6 @@
       * { box-sizing: border-box; }
       html, body { height: 100%; margin: 0; background: #0b0d10; overflow: hidden; }
       #scene { display: block; width: 100vw; height: 100vh; }
-      #keys {
-        position: fixed;
-        left: 16px;
-        bottom: 16px;
-        color: #7b8794;
-        font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace;
-        pointer-events: none;
-        user-select: none;
-      }
-      #keys b { color: #d8dee6; font-weight: 600; }
-
-      /* Replaces the existing "── HUD ──" block in index.html's <style>, and adds one
-         override for #keys at the bottom. Everything above that block (`:root`, `body`,
-         `#scene`, `#keys`, `.tp-dfwv`) stays exactly as it is. */
 
       /* ── HUD ─────────────────────────────────────────────────────────── */
       #hud {
@@ -269,9 +255,6 @@
       /* ── radar ───────────────────────────────────────────────────────── */
       /* Bottom-left, clear of the debug panel's whole right-hand column. */
       .hud-radar { position: fixed; left: 16px; bottom: 16px; line-height: 0; }
-
-      /* `#keys` moves right to clear the dial: 16 + 192 + 16. */
-      #keys { left: 224px; }
 
 
       /* ── title screen ────────────────────────────────────────────────── */
@@ -658,11 +641,9 @@
       }
       .title-hint b { color: #d8dee6; font-weight: 600; }
 
-      /* The key legend and the HUD belong to the match, not to the menu. */
+      /* The HUD belongs to the match, not to the menus in front of it. */
       body.is-title #hud,
-      body.is-title #keys,
-      body.is-select #hud,
-      body.is-select #keys { display: none; }
+      body.is-select #hud { display: none; }
 
       /* ── vehicle select ───────────────────────────────────────────────
          Same shell as the title: painted backdrop, legibility scrim, DOM on
@@ -924,6 +905,190 @@
       #sound.is-on .sound-button:hover { color: #ffb055; border-color: #ff8c1a; }
 
       .tp-dfwv { z-index: 10; }
+
+      /* ── in-game menu ─────────────────────────────────────────────────
+         The pause screen and the settings screen, which are one screen. Sits
+         above everything including the debug panel (z-index 10), because a
+         modal that something else can cover is not modal. */
+      #menu {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: none;
+        place-items: center;
+        font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #d8dee6;
+      }
+      #menu.is-shown { display: grid; }
+
+      /* Blurred rather than merely darkened: the arena behind is a held frame,
+         and blurring says "stopped" in a way a flat scrim does not. */
+      .menu-scrim {
+        position: absolute;
+        inset: 0;
+        background: rgba(6, 8, 11, 0.72);
+        backdrop-filter: blur(3px);
+      }
+
+      .menu-panel {
+        position: relative;
+        width: min(560px, calc(100vw - 32px));
+        max-height: calc(100vh - 48px);
+        overflow-y: auto;
+        padding: 28px 30px 26px;
+        background: linear-gradient(180deg, #14181d 0%, #0d1013 100%);
+        box-shadow:
+          inset 0 0 0 2px #2a323c,
+          inset 0 1px 0 rgba(255, 214, 160, 0.08),
+          0 24px 70px rgba(0, 0, 0, 0.7);
+        /* Same chamfer as the START button, so the menu reads as part of the
+           same set rather than a browser dialog that wandered in. */
+        clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px);
+      }
+
+      .menu-title {
+        margin: 0 0 20px;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.42em;
+        text-indent: 0.42em;
+        text-transform: uppercase;
+        color: #ffd9a8;
+        text-shadow: 0 0 14px rgba(255, 140, 26, 0.45);
+      }
+
+      .menu-actions { display: grid; gap: 8px; }
+
+      .menu-btn {
+        width: 100%;
+        padding: 13px 18px;
+        font: inherit;
+        font-weight: 600;
+        letter-spacing: 0.16em;
+        text-align: left;
+        color: #d8dee6;
+        background: rgba(20, 24, 29, 0.9);
+        border: 0;
+        box-shadow: inset 0 0 0 1px #2a323c;
+        cursor: pointer;
+        transition: color 120ms linear, background 120ms linear, box-shadow 120ms linear;
+      }
+      .menu-btn:hover {
+        color: #ffd9a8;
+        background: rgba(255, 140, 26, 0.1);
+        box-shadow: inset 0 0 0 1px #6a4a22;
+      }
+      .menu-btn:focus-visible {
+        outline: none;
+        box-shadow: inset 0 0 0 2px #ff8c1a, 0 0 0 3px rgba(255, 140, 26, 0.28);
+      }
+      .menu-btn--primary {
+        color: #1a0f06;
+        background: linear-gradient(180deg, #ffb055 0%, #ff8c1a 55%, #e0700c 100%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+      }
+      .menu-btn--primary:hover {
+        color: #1a0f06;
+        background: linear-gradient(180deg, #ffc179 0%, #ff9c34 55%, #f07d16 100%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 0 26px rgba(255, 140, 26, 0.4);
+      }
+      .menu-btn--quiet { color: #8b95a3; }
+
+      /* ── settings ─────────────────────────────────────────────────────── */
+      .menu-settings {
+        margin-top: 22px;
+        padding-top: 18px;
+        border-top: 1px solid #232a33;
+        display: grid;
+        gap: 12px;
+      }
+      .menu-setting {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .menu-setting__label {
+        font-size: 11px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: #8b95a3;
+      }
+      .menu-setting__note {
+        margin: -6px 0 0;
+        font-size: 11px;
+        color: #6b7784;
+      }
+
+      .menu-select,
+      .menu-toggle {
+        min-width: 132px;
+        padding: 8px 12px;
+        font: inherit;
+        color: #d8dee6;
+        background: rgba(11, 13, 16, 0.8);
+        border: 1px solid #2a323c;
+        border-radius: 0;
+        cursor: pointer;
+      }
+      .menu-select:hover,
+      .menu-toggle:hover { border-color: #4a5461; color: #ffd9a8; }
+      .menu-select:focus-visible,
+      .menu-toggle:focus-visible { outline: 2px solid #ff8c1a; outline-offset: 2px; }
+      .menu-toggle[aria-pressed='true'] { color: #ff8c1a; border-color: #6a4a22; }
+
+      /* ── controls list ────────────────────────────────────────────────── */
+      .menu-controls { display: grid; gap: 20px; margin-bottom: 22px; }
+      .menu-group__title {
+        margin: 0 0 8px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.26em;
+        text-transform: uppercase;
+        color: #ff8c1a;
+      }
+      .menu-binds { margin: 0; display: grid; gap: 5px; }
+      .menu-bind {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 4px 0;
+        border-bottom: 1px solid rgba(35, 42, 51, 0.6);
+      }
+      .menu-bind__label { margin: 0; color: #aab4c0; }
+      .menu-bind__note { color: #6b7784; font-style: italic; font-size: 11px; }
+      .menu-bind__keys {
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        flex-shrink: 0;
+      }
+      .menu-bind__keys kbd {
+        display: inline-block;
+        min-width: 24px;
+        padding: 3px 7px;
+        font: inherit;
+        font-size: 11px;
+        text-align: center;
+        color: #d8dee6;
+        background: #1a1f26;
+        box-shadow: inset 0 0 0 1px #333c47, 0 1px 0 #0b0d10;
+      }
+      .menu-bind__or { color: #4a5461; font-size: 11px; }
+      .menu-bind__pad {
+        margin-left: 4px;
+        padding: 3px 7px;
+        font-size: 11px;
+        color: #8b95a3;
+        background: rgba(11, 13, 16, 0.6);
+        box-shadow: inset 0 0 0 1px #232a33;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .menu-scrim { backdrop-filter: none; }
+      }
     </style>
   </head>
   <body>
@@ -932,13 +1097,7 @@
     <div id="title"></div>
     <div id="select"></div>
     <div id="sound"></div>
-    <div id="keys">
-      <div><b>W&nbsp;S</b> throttle / brake &nbsp;·&nbsp; <b>A&nbsp;D</b> steer</div>
-      <div><b>Space</b> handbrake &nbsp;·&nbsp; <b>C</b> look back &nbsp;·&nbsp; <b>R</b> reset &nbsp;·&nbsp; <b>M</b> music &nbsp;·&nbsp; <b>N</b> mute &nbsp;·&nbsp; <b>P</b> pause &nbsp;·&nbsp; <b>E</b> engine</div>
-      <div><b>J</b> / left&nbsp;click machine gun &nbsp;·&nbsp; <b>K</b> / right&nbsp;click special &nbsp;·&nbsp; <b>L</b> cycle special</div>
-      <div><b>T</b> next target &nbsp;<i>(homing missile only)</i></div>
-      <div>gamepad: triggers, left stick, <b>A</b> handbrake, <b>X</b> gun, <b>Y</b> special, <b>RB</b> cycle, <b>LB</b> target</div>
-    </div>
+    <div id="menu"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

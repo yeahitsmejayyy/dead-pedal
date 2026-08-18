@@ -10,6 +10,7 @@
  * monitor they were captured on.
  */
 import { clamp, moveToward } from '../core/scalar'
+import { isBound, keysFor } from '../content/controls'
 import { type InputFrame } from '../sim'
 
 export type InputTuning = {
@@ -33,17 +34,24 @@ export const DEFAULT_INPUT: InputTuning = {
   deadzone: 0.12,
 }
 
+/**
+ * Derived, not declared — `content/controls` is the source.
+ *
+ * Kept as a local lookup because `sample` runs every tick and reads several of
+ * these per call; resolving through the table each time would be a table walk
+ * inside the hot path for a value that never changes.
+ */
 const KEYS = {
-  forward: ['KeyW', 'ArrowUp'],
-  back: ['KeyS', 'ArrowDown'],
-  left: ['KeyA', 'ArrowLeft'],
-  right: ['KeyD', 'ArrowRight'],
-  handbrake: ['Space'],
-  lookBack: ['KeyC'],
-  fire: ['KeyJ'],
-  special: ['KeyK'],
-  cycle: ['KeyL'],
-  cycleTarget: ['KeyT', 'Tab'],
+  forward: keysFor('forward'),
+  back: keysFor('back'),
+  left: keysFor('left'),
+  right: keysFor('right'),
+  handbrake: keysFor('handbrake'),
+  lookBack: keysFor('lookBack'),
+  fire: keysFor('fire'),
+  special: keysFor('special'),
+  cycle: keysFor('cycle'),
+  cycleTarget: keysFor('cycleTarget'),
 } as const
 
 export class InputSource {
@@ -88,13 +96,13 @@ export class InputSource {
 
     target.addEventListener('keydown', (event) => {
       if (event.repeat) return
-      if (event.code === 'KeyR') this.resetRequested = true
+      if (isBound('reset', event.code)) this.resetRequested = true
       // Latched, so holding the key does not cycle every tick.
-      if (KEYS.cycle.includes(event.code as (typeof KEYS.cycle)[number])) {
+      if (KEYS.cycle.includes(event.code)) {
         this.cycleRequests++
         event.preventDefault()
       }
-      if (KEYS.cycleTarget.includes(event.code as (typeof KEYS.cycleTarget)[number])) {
+      if (KEYS.cycleTarget.includes(event.code)) {
         this.targetRequests++
         event.preventDefault()
       }
