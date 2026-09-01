@@ -1,0 +1,23 @@
+<!doctype html>
+<!-- SPIKE — throwaway. Delete with the spike/ directory. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>dead-pedal spike</title>
+    <style>
+      html, body { height: 100%; margin: 0; background: #0b0d10; overflow: hidden; }
+      #scene { display: block; width: 100vw; height: 100vh; }
+      #readout {
+        position: fixed; left: 12px; top: 12px;
+        font: 12px/1.6 ui-monospace, Menlo, monospace;
+        color: #ffd9a8; background: rgba(0,0,0,0.55); padding: 6px 10px;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <div id="readout">connecting…</div>
+    <script type="module" src="/spike/client.ts"></script>
+  </body>
+</html>
