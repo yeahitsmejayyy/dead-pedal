@@ -38,6 +38,22 @@ let lastReport = performance.now()
 let lastSnapshotAt = 0
 let gapMs = 0
 
+/**
+ * The beat, counted rather than squinted at.
+ *
+ * With no interpolation the client draws whatever tick it last received. If the
+ * server ticks at 59.1Hz and the display refreshes at 60Hz, then roughly once a
+ * second there is no new tick to draw and the previous one is drawn again — a
+ * repeat — or two arrive between frames and one is never drawn — a skip. Both
+ * are the same fault seen from opposite sides, and both are invisible to a
+ * screenshot, so they get counters.
+ */
+let renderedTick = -1
+let repeats = 0
+let skips = 0
+/** Display refresh rate. The reason the repeat counter reads the way it does. */
+let framesDrawn = 0
+
 /** `?protocol=2` to prove the handshake refuses a skew. */
 const claimed = Number(new URLSearchParams(location.search).get('protocol') ?? PROTOCOL_VERSION)
 
@@ -97,15 +113,50 @@ function frame(now: number): void {
   lastFrame = now
 
   if (renderer !== null && world !== null) {
+    framesDrawn++
+    if (renderedTick >= 0) {
+      const advanced = world.tick - renderedTick
+      if (advanced === 0) repeats++
+      else if (advanced > 1) skips += advanced - 1
+    }
+    renderedTick = world.tick
+
     // previous === current: no interpolation whatsoever.
     renderer.render(world, world, 1, elapsed, me, false)
 
     if (now - lastReport >= 500 && refused === null) {
       const seconds = (now - lastReport) / 1000
       const kb = (bytesIn / 1024 / seconds).toFixed(0)
+      // Where is everyone else? The spike has no HUD and no radar, and the two
+      // cars spawn 48m apart in a 180m arena — which is far enough that "I only
+      // ever saw one car" is the obvious first experience without this line.
+      const mine = world.vehicles.find((v) => v.id === me)
+      const others = world.vehicles
+        .filter((v) => v.id !== me)
+        .map((v) => {
+          if (mine === undefined) return `car ${v.id}`
+          const dx = v.pos.x - mine.pos.x
+          const dz = v.pos.z - mine.pos.z
+          // Bearing relative to where you are pointing, so it reads as a
+          // direction to steer rather than a compass heading to convert.
+          const rel = ((Math.atan2(dx, dz) - mine.yaw) * 180) / Math.PI
+          const deg = Math.round(((rel % 360) + 540) % 360 - 180)
+          const side = Math.abs(deg) < 12 ? 'ahead' : deg > 0 ? `${Math.abs(deg)}° right` : `${Math.abs(deg)}° left`
+          return `car ${v.id} ${Math.hypot(dx, dz).toFixed(0)}m ${side}`
+        })
+        .join(' · ')
+
+      const speed = mine === undefined ? 0 : Math.hypot(mine.vel.x, mine.vel.z) * 3.6
+
       readout.textContent =
-        `you are car ${me} · tick ${world.tick} · ${(snapshots / seconds).toFixed(0)}/s snapshots · ` +
-        `${kb} KB/s in · last gap ${gapMs.toFixed(1)}ms`
+        `you are car ${me} · ${speed.toFixed(0)} km/h · tick ${world.tick} · ` +
+        `${(snapshots / seconds).toFixed(0)}/s snapshots · ${kb} KB/s in · gap ${gapMs.toFixed(1)}ms\n` +
+        `${(framesDrawn / seconds).toFixed(0)} fps display vs ${(snapshots / seconds).toFixed(0)} Hz world · ` +
+        `repeated frames ${(repeats / seconds).toFixed(1)}/s · skipped ticks ${(skips / seconds).toFixed(1)}/s\n` +
+        (others === '' ? 'waiting for another player' : others)
+      repeats = 0
+      skips = 0
+      framesDrawn = 0
       bytesIn = 0
       snapshots = 0
       lastReport = now

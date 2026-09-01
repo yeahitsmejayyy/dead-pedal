@@ -89,24 +89,95 @@ cost is not paid under an authoritative server, because only one machine ever
 simulates — which is a second, independent argument for the model already chosen,
 alongside the cross-engine trig note in `src/sim/vehicle.ts`.
 
+## How it feels with no interpolation and no prediction
+
+Answered by Jayyy driving it in two real browsers on localhost, which is the
+only way it could be answered — see the note below on why the automated browser
+could not.
+
+**Smooth at low and moderate speed. Jitter appears at full speed, and the car
+gets shaky.**
+
+That is the expected shape of the fault and it is worth writing down why, because
+it tells the interpolation ticket where to aim. With no interpolation the client
+draws whatever discrete snapshot it last received, and snapshots arrive every
+14–19ms while the display refreshes every 16.7ms. The two are not phase-locked,
+so some frames repeat the previous snapshot and others skip one. The *timing*
+error is constant, but the *positional* error it produces scales with speed:
+
+- at 10 km/h a 3ms timing wobble is about 8mm of car — invisible
+- at 165 km/h (top speed is 46 m/s) the same wobble is about 14cm, every frame,
+  in a direction that keeps changing
+
+So "it is fine until you go fast" is not a separate bug. It is the same error the
+whole time, becoming visible once the car covers enough ground per frame for it
+to exceed a pixel. Interpolating between the last two snapshots, deliberately
+rendering slightly in the past, removes it — and it must be done for the local
+car as well as remote ones, because the shakiness Jayyy saw was on the car he was
+driving.
+
+Latency on localhost was not perceptible, so **local prediction is not what this
+observation is asking for.** Prediction hides round-trip delay, which is roughly
+zero on loopback; the jitter here is a sampling artefact and would persist at
+zero latency. The two problems are genuinely separate and the interpolation
+ticket should not conflate them: interpolation fixes this, prediction fixes
+something that cannot be felt until there is a real server on the other end.
+
+### The real cause: a 120Hz display against a 60Hz world
+
+The first theory here was wrong and is worth recording as wrong, because the
+correction is the whole finding.
+
+The theory was that `setInterval(1000/60)` produced 16.92ms rather than 16.67ms,
+so the server ran at 59.1Hz against a 60Hz display and the two beat about once a
+second. The tick timing was measured and the numbers are real:
+
+```
+naive setInterval    mean 16.92ms   sd 0.40ms   p99 18.9
+drift-corrected      mean 16.67ms   sd 0.61ms   p99 18.1
+```
+
+But counting what the client actually drew disproved it as the cause. On Jayyy's
+machine, at rest, both clients reported:
+
+```
+60/s snapshots · repeated frames 60.0/s · skipped ticks 0.0/s
+```
+
+Sixty new frames plus sixty repeats is **120 frames per second**: the display is
+120Hz. Zero skips means nothing is sliding or drifting. It is not a beat at all,
+it is a clean 2:1 ratio — **every second frame shows a stale position**.
+
+That is why it looks smooth slowly and shaky fast. At top speed the car covers
+about 0.77m per snapshot, and each of those positions is held for two refreshes,
+so the eye sees a stair-step rather than a slide. At 10 km/h the same stair is
+sub-millimetre.
+
+Consequences for the tickets:
+
+- **Interpolation must run at display rate, not snapshot rate**, and must not
+  assume 60Hz. A 120Hz or 144Hz display is ordinary now, and any design that
+  ties rendering to the snapshot rate reproduces exactly this artefact.
+- **It applies to the local car too.** The shake Jayyy saw was on the car he was
+  driving, not a remote one.
+- **The tick-rate correction is still worth doing** in the authoritative server —
+  16.92ms is a genuinely wrong mean and two nominally-60Hz clocks on different
+  machines will always drift — but it is hygiene, not the fix. Even a perfect
+  60Hz server produces this on a 120Hz display.
+- **Prediction is not what this is asking for.** Loopback latency is ~0 and the
+  artefact would persist at zero latency. Interpolation and prediction solve
+  genuinely different problems and the tickets should not merge them.
+
 ## What this spike could NOT answer
 
-Two of the four questions asked. Both need a real, focused browser and neither
-was answered honestly here, so they are still open:
-
-- **How bad the remote car looks with no interpolation.**
-- **How bad your own car feels with no prediction, on localhost and on a real
-  connection.**
+- **How your own car feels with no prediction, over a REAL connection.** Only
+  localhost was available, where the round trip is close to zero. This stays
+  open until the deploy ticket puts a server at a real distance.
 
 The automated browser used for this work does not run `requestAnimationFrame`
-in a background tab, so nothing rendered and no input latency could be felt. The
-only related number that IS real is the measured snapshot gap on loopback:
-**14–19ms**, i.e. roughly one snapshot per display frame. That bounds the
-localhost case as close to the best it can be and says nothing about a real
-connection.
-
-Run `bun spike/server.ts`, open `spike.html` in two real browser windows, and
-drive. That is a five-minute answer for a human and was not available here.
+in a background tab, so nothing rendered and no input latency could be felt —
+which is why the section above is Jayyy's observation rather than a measurement.
+The one number that IS mine is the snapshot gap on loopback: **14–19ms**.
 
 ## Incidental things the spike taught
 
