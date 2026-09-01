@@ -3,7 +3,55 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>dead-pedal — M5</title>
+
+    <title>Dead Pedal — Browser Car Combat Game</title>
+    <meta
+      name="description"
+      content="Four armoured cars, one dirt arena, five minutes. Most kills wins. A car combat game that runs in your browser — no install, keyboard or gamepad."
+    />
+    <link rel="canonical" href="https://dead-pedal.vercel.app/" />
+    <meta name="theme-color" content="#0b0d10" />
+
+    <!-- The mask lifted out of the wordmark. A favicon is 16 CSS pixels most of
+         the time, which is why this is the mask alone and not the logo: the
+         wordmark is 4:1 and unreadable at that size, whereas the mask still
+         resolves as a face. -->
+    <!-- Two, not four. A browser picks ONE icon for a 16px slot, and declaring
+         a 512px variant here just invites it to pull 423KB to draw a tab. The
+         larger sizes belong in a web manifest, which this does not have yet. -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/brand/icon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/brand/icon-180.png" />
+
+    <!-- Open Graph and Twitter.
+         These URLs are ABSOLUTE and hardcode the canonical host on purpose.
+         Vite rewrites href/src in this file to match `base`, but it does not
+         touch `content` attributes — and a scraper cannot resolve a relative
+         one anyway, because it is reading the markup, not visiting the page.
+         So a relative og:image is simply a missing preview. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Dead Pedal" />
+    <meta property="og:url" content="https://dead-pedal.vercel.app/" />
+    <meta property="og:title" content="Dead Pedal — Browser Car Combat Game" />
+    <meta
+      property="og:description"
+      content="Four armoured cars, one dirt arena, five minutes. Most kills wins. Runs in your browser — no install."
+    />
+    <meta property="og:image" content="https://dead-pedal.vercel.app/brand/og-cover.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="670" />
+    <meta
+      property="og:image:alt"
+      content="Four armoured cars fighting in a dirt arena under a burning dusk sky, with the Dead Pedal logo."
+    />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Dead Pedal — Browser Car Combat Game" />
+    <meta
+      name="twitter:description"
+      content="Four armoured cars, one dirt arena, five minutes. Most kills wins. Runs in your browser — no install."
+    />
+    <meta name="twitter:image" content="https://dead-pedal.vercel.app/brand/og-cover.jpg" />
     <style>
       :root { color-scheme: dark; }
       * { box-sizing: border-box; }
