@@ -281,6 +281,23 @@ test.describe('M7 — the same seed draws the same frame', () => {
     const first = await shoot()
     await page.reload()
     await page.waitForFunction(() => '__deadPedal' in window)
+    /**
+     * Wait for the models AGAIN after the reload, exactly as beforeEach does.
+     *
+     * Without this the second capture can be taken while the glTF cars are
+     * still arriving, so it draws the procedural boxes they replace and the two
+     * images differ — which reads as "the renderer is non-deterministic" when
+     * the renderer is fine and the test simply photographed a half-loaded page.
+     * That is the same trap beforeEach documents; this path just did not repeat
+     * the precaution, and it only started failing once the suite stopped
+     * reusing a warm dev server.
+     */
+    await page.waitForFunction(
+      () => (window as unknown as { __deadPedal: { modelsLoaded: () => boolean } })
+        .__deadPedal.modelsLoaded(),
+      undefined,
+      { timeout: 90_000 },
+    )
     const second = await shoot()
 
     expect(

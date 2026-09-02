@@ -19,7 +19,8 @@
     "test:e2e": "playwright test",
     "record": "tsx tools/record.ts",
     "botmatch": "tsx tools/botmatch.ts",
-    "refsheet": "tsx tools/refsheet.capture.ts"
+    "refsheet": "tsx tools/refsheet.capture.ts",
+    "serve": "tsx src/net/server.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
@@ -27,6 +28,7 @@
     "@tweakpane/core": "^2.0.5",
     "@types/node": "^26.1.2",
     "@types/three": "^0.185.1",
+    "@types/ws": "^8.18.1",
     "eslint": "^9.39.5",
     "tsx": "^4.23.1",
     "typescript": "^6.0.3",
@@ -36,6 +38,7 @@
   },
   "dependencies": {
     "three": "^0.185.1",
-    "tweakpane": "^4.0.5"
+    "tweakpane": "^4.0.5",
+    "ws": "^8.21.3"
   }
 }
